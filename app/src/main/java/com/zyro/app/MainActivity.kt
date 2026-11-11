@@ -194,11 +194,9 @@ class MainActivity : Activity() {
         box.addView(option("Wake the screen when I say \"Hey Zyro\" and the phone is asleep", Prefs.autoWake) { Prefs.autoWake = it })
         box.addView(option("Let me interrupt Zyro by saying \"ruko\" / \"stop\"", Prefs.bargeIn) { Prefs.bargeIn = it })
         box.addView(option("Start Zyro automatically when the phone restarts", Prefs.autoStart) { Prefs.autoStart = it })
-        box.addView(option("Clap twice to find my phone (Zyro shouts \"I am here\")", Prefs.clapFind) { Prefs.clapFind = it })
         box.addView(option("Shake the phone twice to toggle the torch", Prefs.shakeTorch) { Prefs.shakeTorch = it })
         box.addView(option("Face down = Zyro stays quiet and collects messages", Prefs.faceDownQuiet) { Prefs.faceDownQuiet = it })
         box.addView(option("Pocket mode: read new messages aloud, do not wake the screen", Prefs.pocketMode) { Prefs.pocketMode = it })
-        box.addView(option("Mood aware: kind hint when I sound tired or stressed (a guess only)", Prefs.moodAware) { Prefs.moodAware = it })
 
         box.addView(label("SMART TV (Android TV / Aiwa) - optional", 15f))
         box.addView(label("Turn the TV on and connect it to this phone's hotspot (or the same Wi-Fi)."))

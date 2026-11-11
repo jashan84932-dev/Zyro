@@ -390,7 +390,6 @@ class Assistant private constructor(private val app: Context) {
             val took = if (speechStart != 0L) System.currentTimeMillis() - speechStart else 0L
             val avg = if (rmsCount > 0) rmsSum / rmsCount else 0f
             speechStart = 0L
-            Mood.feed(text.trim().split(Regex("\\s+")).size, took, avg)?.let { announce(it) }
             heard(text.trim())
         }
 
@@ -426,8 +425,6 @@ class Assistant private constructor(private val app: Context) {
             if (speechStart != 0L) {
                 rmsSum += rmsdB
                 rmsCount++
-            } else if (Prefs.clapFind && mode == OrbView.LISTEN && Clap.feed(rmsdB, now)) {
-                main.post { foundMe() }
             }
         }
         override fun onBufferReceived(buffer: ByteArray?) {}

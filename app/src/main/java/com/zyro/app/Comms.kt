@@ -309,20 +309,10 @@ object Comms {
         val name = tokens.subList(0, ko).filter { it !in SMS_LEAD }.joinToString(" ").trim()
         var rest = tokens.subList(ko + 1, tokens.size)
         var skip = 0
-        while (skip < rest.size && (rest[skip] in SMS_LEAD || Prank.isPrankWord(rest[skip]) || rest[skip] in setOf("wala", "वाला", "wali", "वाली", "ek", "एक"))) skip++
+        while (skip < rest.size && (rest[skip] in SMS_LEAD || rest[skip] in setOf("wala", "वाला", "wali", "वाली", "ek", "एक"))) skip++
         rest = rest.subList(skip, rest.size)
         val body = rest.joinToString(" ").trim()
         if (name.isBlank()) return "किसे SMS भेजना है?"
-        if (body.isBlank() && tokens.any { Prank.isPrankWord(it) }) {
-            val cn = name
-            if (cn.isBlank()) return "किसे SMS भेजना है?"
-            if (!hands.hasContactsPermission()) return "Contacts की अनुमति दे दो, फिर मैं नाम से SMS भेज पाऊँगा।"
-            val c0 = hands.findContact(cn) ?: return "$cn नाम का contact नहीं मिला।"
-            val funny = Prank.line()
-            pendingSms = Triple(c0.first, c0.second, funny)
-            pendingSmsAt = System.currentTimeMillis()
-            return "${c0.first} को मज़ाकिया SMS: $funny। भेज दूँ?"
-        }
         if (body.isBlank()) return "SMS में क्या लिखूँ? ऐसे बोलो: मम्मी को SMS भेजो कि मैं देर से आऊँगा।"
         if (!hands.hasContactsPermission()) return "Contacts की अनुमति दे दो, फिर मैं नाम से SMS भेज पाऊँगा।"
         val c = hands.findContact(name) ?: return "$name नाम का contact नहीं मिला।"
