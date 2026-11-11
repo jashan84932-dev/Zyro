@@ -3,27 +3,29 @@ package com.zyro.app
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
+import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.SweepGradient
 import android.view.View
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
- * Zyro's face: a slowly turning golden hologram orb made of glowing points, a web of thin
- * lines, three tilted rings and a bright core. It reacts to what Zyro is doing:
- *   IDLE    – slow and calm
- *   LISTEN  – grows and brightens with your voice loudness
- *   THINK   – spins fast
- *   SPEAK   – ripples outward in waves
+ * Zyro's face: a cinematic holographic HUD in the style of the Iron Man films.
+ * Concentric glowing rings turn in opposite directions, a radar sweep circles the dial,
+ * a ring of voice bars jumps with the sound, and a bright core pulses in the centre.
+ *   IDLE   - calm, slow turning
+ *   LISTEN - voice bars follow how loud you are
+ *   THINK  - rings spin fast, the sweep accelerates
+ *   SPEAK  - voice bars dance and the core pulses
  */
 class OrbView(context: Context) : View(context) {
 
@@ -33,127 +35,105 @@ class OrbView(context: Context) : View(context) {
         const val THINK = 2
         const val SPEAK = 3
 
-        private const val N = 240            // points on the sphere
-        private const val RING_STEPS = 96
-        private const val CAMERA = 5f        // perspective distance
-        private val GOLD = Color.rgb(47, 140, 255)
-        private val GOLD_BRIGHT = Color.rgb(140, 210, 255)
-        private val GOLD_DEEP = Color.rgb(20, 70, 190)
+        private const val BARS = 96
+        private const val TICKS = 180
+        private const val DUST = 36
+        private const val TAU = (2.0 * PI).toFloat()
+        private val CYAN = Color.rgb(25, 195, 255)
+        private val BRIGHT = Color.rgb(150, 235, 255)
+        private val DEEP = Color.rgb(10, 95, 200)
     }
 
-    /** Asked every frame, so the orb always follows the assistant. */
     var modeSource: (() -> Int)? = null
     var levelSource: (() -> Float)? = null
 
     private val d = resources.displayMetrics.density
 
-    // unit-sphere points
-    private val px = FloatArray(N)
-    private val py = FloatArray(N)
-    private val pz = FloatArray(N)
-    // projected points
-    private val sx = FloatArray(N)
-    private val sy = FloatArray(N)
-    private val sd = FloatArray(N) // depth 0 (back) .. 1 (front)
+    // everything below is drawn in "unit space": the dial has radius 1 and the canvas is scaled to fit
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.BUTT }
+    private val fillP = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val box = RectF()
 
-    private var edges = IntArray(0)   // pairs a*N+b
-    private var frontLines = FloatArray(0)
-    private var backLines = FloatArray(0)
-
-    private val ringRad = floatArrayOf(1.18f, 1.34f, 1.03f)
-    private val ringTiltX = floatArrayOf(1.25f, 0.55f, -0.95f)
-    private val ringTiltZ = floatArrayOf(0.30f, -0.85f, 1.15f)
-    private val ringSpeed = floatArrayOf(0.55f, -0.38f, 0.85f)
-    private val ringPath = Path()
-
-    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 0.8f * d
-        color = GOLD
+    private val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = RadialGradient(
+            0f, 0f, 1f,
+            intArrayOf(Color.argb(120, 20, 140, 255), Color.argb(50, 10, 90, 220), Color.argb(0, 5, 40, 160)),
+            floatArrayOf(0.25f, 0.6f, 1f), Shader.TileMode.CLAMP
+        )
     }
-    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1.3f * d
-        color = GOLD_BRIGHT
+    private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = RadialGradient(
+            0f, 0f, 1f,
+            intArrayOf(Color.argb(255, 245, 252, 255), Color.argb(230, 130, 225, 255), Color.argb(110, 25, 160, 255), Color.argb(0, 10, 90, 220)),
+            floatArrayOf(0f, 0.22f, 0.55f, 1f), Shader.TileMode.CLAMP
+        )
     }
-    private val spokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 0.7f * d
-        color = GOLD
+    private val discPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = RadialGradient(
+            0f, 0f, 1f,
+            intArrayOf(Color.argb(0, 10, 60, 160), Color.argb(34, 10, 80, 190), Color.argb(70, 15, 110, 230)),
+            floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP
+        )
     }
-    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val corePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val coreRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1.2f * d
-        color = GOLD_BRIGHT
+    private val sweepPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = SweepGradient(
+            0f, 0f,
+            intArrayOf(Color.argb(0, 25, 195, 255), Color.argb(0, 25, 195, 255), Color.argb(34, 25, 195, 255), Color.argb(150, 120, 230, 255), Color.argb(0, 25, 195, 255)),
+            floatArrayOf(0f, 0.55f, 0.85f, 0.995f, 1f)
+        )
     }
 
-    private val DUST = 46
+    // precomputed directions
+    private val bc = FloatArray(BARS) { cos(it.toFloat() / BARS * TAU) }
+    private val bs = FloatArray(BARS) { sin(it.toFloat() / BARS * TAU) }
+    private val tickLines = FloatArray(TICKS * 4)
     private val dustX = FloatArray(DUST) { (it * 0.6180339f) % 1f }
     private val dustY = FloatArray(DUST) { (it * 0.7548776f) % 1f }
-    private val dustV = FloatArray(DUST) { 0.012f + 0.02f * ((it * 37) % 10) / 10f }
+    private val dustV = FloatArray(DUST) { 0.006f + 0.012f * ((it * 37) % 10) / 10f }
     private val dustA = FloatArray(DUST) { 0.3f + 0.7f * ((it * 53) % 10) / 10f }
-    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    // animation state
     private var last = 0L
     private var t = 0f
-    private var ay = 0f
-    private var spin = 0.25f
-    private var energy = 0.25f
+    private var energy = 0.2f
     private var lvl = 0f
+    private var speed = 1f
+    private var rot = 0f      // master angle driving all rings
 
     init {
-        val golden = (PI * (3.0 - sqrt(5.0))).toFloat()
-        for (i in 0 until N) {
-            val y = 1f - 2f * (i + 0.5f) / N
-            val r = sqrt(max(0f, 1f - y * y))
-            val th = golden * i
-            px[i] = cos(th) * r
-            py[i] = y
-            pz[i] = sin(th) * r
+        for (i in 0 until TICKS) {
+            val a = i.toFloat() / TICKS * TAU
+            val major = i % 10 == 0
+            val mid = i % 5 == 0
+            val r0 = 1.56f
+            val r1 = if (major) 1.68f else if (mid) 1.63f else 1.60f
+            tickLines[i * 4] = cos(a) * r0
+            tickLines[i * 4 + 1] = sin(a) * r0
+            tickLines[i * 4 + 2] = cos(a) * r1
+            tickLines[i * 4 + 3] = sin(a) * r1
         }
-        // connect every point to its 3 nearest neighbours
-        val set = HashSet<Int>()
-        val dist = FloatArray(N)
-        for (i in 0 until N) {
-            for (j in 0 until N) {
-                val dx = px[i] - px[j]
-                val dy = py[i] - py[j]
-                val dz = pz[i] - pz[j]
-                dist[j] = if (i == j) 1e9f else dx * dx + dy * dy + dz * dz
-            }
-            repeat(3) {
-                var best = 0
-                for (j in 1 until N) if (dist[j] < dist[best]) best = j
-                dist[best] = 1e9f
-                set.add(min(i, best) * N + max(i, best))
-            }
-        }
-        edges = set.toIntArray()
-        frontLines = FloatArray(edges.size * 4)
-        backLines = FloatArray(edges.size * 4)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        bgPaint.shader = android.graphics.LinearGradient(
+        bgPaint.shader = LinearGradient(
             0f, 0f, 0f, h.toFloat(),
-            intArrayOf(Color.rgb(3, 6, 16), Color.rgb(7, 16, 40), Color.rgb(3, 7, 20)),
-            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP
+            intArrayOf(Color.rgb(1, 4, 10), Color.rgb(3, 12, 28), Color.rgb(1, 4, 11)),
+            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP
         )
-        // gradients are built around (0,0) with radius 100 and scaled when drawn
-        glowPaint.shader = RadialGradient(
-            0f, 0f, 100f,
-            intArrayOf(Color.argb(130, 40, 120, 255), Color.argb(44, 20, 80, 255), Color.argb(0, 10, 50, 255)),
-            floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP
-        )
-        corePaint.shader = RadialGradient(
-            0f, 0f, 100f,
-            intArrayOf(Color.argb(255, 235, 248, 255), Color.argb(210, 110, 190, 255), Color.argb(0, 30, 100, 255)),
-            floatArrayOf(0f, 0.30f, 1f), Shader.TileMode.CLAMP
-        )
+    }
+
+    /** One glowing arc: a wide faint stroke under a thin bright one (a cheap bloom). */
+    private fun arc(c: Canvas, r: Float, start: Float, sweep: Float, w: Float, color: Int, alpha: Int) {
+        box.set(-r, -r, r, r)
+        line.shader = null
+        line.pathEffect = null
+        line.color = color
+        line.strokeWidth = w * 3.2f
+        line.alpha = (alpha * 0.20f).toInt()
+        c.drawArc(box, start, sweep, false, line)
+        line.strokeWidth = w
+        line.alpha = alpha
+        c.drawArc(box, start, sweep, false, line)
     }
 
     override fun onDraw(c: Canvas) {
@@ -161,7 +141,6 @@ class OrbView(context: Context) : View(context) {
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
 
-        // ---- time and smoothing ----
         val now = System.nanoTime()
         var dt = if (last == 0L) 0.016f else (now - last) / 1e9f
         last = now
@@ -169,164 +148,184 @@ class OrbView(context: Context) : View(context) {
         t += dt
 
         val mode = modeSource?.invoke() ?: IDLE
-        val rawLevel = levelSource?.invoke() ?: 0f
-        lvl += (rawLevel - lvl) * (1f - exp(-dt * 12f))
+        val raw = levelSource?.invoke() ?: 0f
+        lvl += (raw - lvl) * (1f - exp(-dt * 10f))
 
-        val targetSpin: Float
-        val targetEnergy: Float
+        val targetE: Float
+        val targetS: Float
         when (mode) {
-            LISTEN -> { targetSpin = 0.55f; targetEnergy = 0.45f + 0.55f * lvl }
-            THINK -> { targetSpin = 1.9f; targetEnergy = 0.9f }
+            LISTEN -> { targetE = 0.35f + 0.65f * lvl; targetS = 1.5f }
+            THINK -> { targetE = 0.8f; targetS = 4.2f }
             SPEAK -> {
-                targetSpin = 0.7f
-                targetEnergy = 0.62f + 0.3f * abs(sin(t * 5.3f)) * abs(sin(t * 2.1f + 1f))
+                targetE = 0.55f + 0.4f * abs(sin(t * 4.4f)) * abs(sin(t * 1.7f + 0.6f))
+                targetS = 2.2f
             }
-            else -> { targetSpin = 0.22f; targetEnergy = 0.22f }
+            else -> { targetE = 0.14f; targetS = 1f }
         }
         val k = 1f - exp(-dt * 3f)
-        spin += (targetSpin - spin) * k
-        energy += (targetEnergy - energy) * k
-        ay += spin * dt
+        energy += (targetE - energy) * k
+        speed += (targetS - speed) * k
+        rot += speed * dt * 22f          // degrees per second at speed 1
 
         val cx = w / 2f
-        val cy = h / 2f
-        val R = min(w, h) * 0.26f * (1f + 0.10f * energy)
+        val cy = h * 0.47f
+        val R = min(w, h) * 0.23f * (1f + 0.025f * sin(t * 1.2f))   // radius of the main dial (r = 1)
+        val px = d / R                                                // one dp in unit space
 
-        // ---- background: deep navy gradient + soft drifting dust ----
+        // ---------- background ----------
         c.drawRect(0f, 0f, w, h, bgPaint)
+
+        // faint scan lines
+        line.shader = null
+        line.pathEffect = null
+        line.color = Color.rgb(30, 130, 220)
+        line.strokeWidth = 1f
+        line.alpha = 10
+        var yy = (t * 14f * d) % (6f * d)
+        while (yy < h) {
+            c.drawLine(0f, yy, w, yy, line)
+            yy += 6f * d
+        }
+
+        // dust
         for (q in 0 until DUST) {
             dustY[q] -= dustV[q] * dt
-            if (dustY[q] < -0.02f) { dustY[q] = 1.02f; dustX[q] = (q * 0.6180339f + t * 0.01f) % 1f }
-            val tw = 0.5f + 0.5f * sin(t * 1.3f + q)
-            dotPaint.color = GOLD_BRIGHT
-            dotPaint.alpha = (30 + 60 * tw * dustA[q]).toInt()
-            c.drawCircle(dustX[q] * w, dustY[q] * h, (0.6f + 1.2f * dustA[q]) * d, dotPaint)
+            if (dustY[q] < -0.02f) { dustY[q] = 1.02f; dustX[q] = (q * 0.6180339f + t * 0.011f) % 1f }
+            val tw = 0.5f + 0.5f * sin(t * 1.2f + q * 1.9f)
+            fillP.shader = null
+            fillP.color = Color.rgb(140, 220, 255)
+            fillP.alpha = (20 + 70 * tw * dustA[q]).toInt()
+            c.drawCircle(dustX[q] * w, dustY[q] * h, (0.5f + 1.0f * dustA[q]) * d, fillP)
         }
 
-        // ---- big soft glow behind ----
+        // corner brackets (pure decoration, no text)
+        line.shader = null
+        line.color = CYAN
+        line.strokeWidth = 1.6f * d
+        line.alpha = 150
+        val m = 20f * d
+        val L = 30f * d
+        val top = 44f * d
+        val bot = h - 30f * d
+        for (sx in 0..1) {
+            val x = if (sx == 0) m else w - m
+            val dx = if (sx == 0) L else -L
+            c.drawLine(x, top, x + dx, top, line)
+            c.drawLine(x, top, x, top + L, line)
+            c.drawLine(x, bot, x + dx, bot, line)
+            c.drawLine(x, bot, x, bot - L, line)
+        }
+
+        // ---------- the dial (unit space) ----------
         c.save()
         c.translate(cx, cy)
-        val gs = R * 2.3f / 100f
-        c.scale(gs, gs)
-        glowPaint.alpha = (110 + 145 * energy).toInt().coerceIn(0, 255)
-        c.drawCircle(0f, 0f, 100f, glowPaint)
-        c.restore()
+        c.scale(R, R)
 
-        // ---- rotate + project sphere points ----
-        val cyaw = cos(ay)
-        val syaw = sin(ay)
-        val tiltX = 0.38f + 0.12f * sin(t * 0.35f)
-        val ctx = cos(tiltX)
-        val stx = sin(tiltX)
-        val wob = 0.012f + 0.075f * energy
-        for (i in 0 until N) {
-            val phase = if (mode == SPEAK) t * 7f - py[i] * 8f else t * 3f + py[i] * 6f + px[i] * 3f
-            val s = 1f + wob * sin(phase)
-            val x = px[i] * s
-            val y = py[i] * s
-            val z = pz[i] * s
-            val x1 = x * cyaw + z * syaw
-            val z1 = -x * syaw + z * cyaw
-            val y2 = y * ctx - z1 * stx
-            val z2 = y * stx + z1 * ctx
-            val persp = CAMERA / (CAMERA - z2)
-            sx[i] = cx + x1 * R * persp
-            sy[i] = cy + y2 * R * persp
-            sd[i] = ((z2 + 1.1f) / 2.2f).coerceIn(0f, 1f)
-        }
-
-        // ---- spokes from the core to a few points ----
-        spokePaint.alpha = (40 + 60 * energy).toInt()
-        var i = 0
-        while (i < N) {
-            if (sd[i] > 0.35f) c.drawLine(cx, cy, sx[i], sy[i], spokePaint)
-            i += 16
-        }
-
-        // ---- wire web (front lines brighter than back lines) ----
-        var nf = 0
-        var nb = 0
-        for (e in edges) {
-            val a = e / N
-            val b = e % N
-            if ((sd[a] + sd[b]) * 0.5f > 0.5f) {
-                frontLines[nf++] = sx[a]; frontLines[nf++] = sy[a]; frontLines[nf++] = sx[b]; frontLines[nf++] = sy[b]
-            } else {
-                backLines[nb++] = sx[a]; backLines[nb++] = sy[a]; backLines[nb++] = sx[b]; backLines[nb++] = sy[b]
-            }
-        }
-        linePaint.color = GOLD_DEEP
-        linePaint.alpha = (60 + 40 * energy).toInt()
-        c.drawLines(backLines, 0, nb, linePaint)
-        linePaint.color = GOLD
-        linePaint.alpha = (110 + 80 * energy).toInt().coerceAtMost(255)
-        c.drawLines(frontLines, 0, nf, linePaint)
-
-        // ---- glowing points ----
-        for (p in 0 until N) {
-            val dn = sd[p]
-            val r = (0.7f + 1.7f * dn) * d * (0.9f + 0.4f * energy)
-            if (dn > 0.55f) {
-                dotPaint.color = GOLD
-                dotPaint.alpha = (18 + 28 * energy).toInt()
-                c.drawCircle(sx[p], sy[p], r * 2.3f, dotPaint)
-            }
-            dotPaint.color = if (dn > 0.6f) GOLD_BRIGHT else GOLD
-            dotPaint.alpha = (50 + 205 * dn).toInt()
-            c.drawCircle(sx[p], sy[p], r, dotPaint)
-        }
-
-        // ---- three tilted rings with a travelling spark ----
-        ringPaint.alpha = (110 + 100 * energy).toInt().coerceAtMost(255)
-        for (g in 0 until 3) {
-            val rr = ringRad[g] * (1f + 0.03f * energy * sin(t * 4f + g))
-            val ca = cos(ringTiltX[g]); val sa = sin(ringTiltX[g])
-            val cb = cos(ringTiltZ[g]); val sb = sin(ringTiltZ[g])
-            val yaw = ay * ringSpeed[g] + g * 1.7f
-            val cyw = cos(yaw); val syw = sin(yaw)
-            ringPath.reset()
-            var sparkX = 0f
-            var sparkY = 0f
-            val sparkAt = ((t * (0.35f + 0.1f * g) * (1f + energy)) % 1f) * RING_STEPS
-            for (s in 0..RING_STEPS) {
-                val phi = (s.toFloat() / RING_STEPS) * (2f * PI.toFloat())
-                val x0 = cos(phi) * rr
-                val y0 = sin(phi) * rr
-                // tilt about X, then about Z, then spin about Y
-                val y1 = y0 * ca
-                val z1 = y0 * sa
-                val x2 = x0 * cb - y1 * sb
-                val y2 = x0 * sb + y1 * cb
-                val x3 = x2 * cyw + z1 * syw
-                val z3 = -x2 * syw + z1 * cyw
-                val y4 = y2 * ctx - z3 * stx
-                val z4 = y2 * stx + z3 * ctx
-                val persp = CAMERA / (CAMERA - z4)
-                val X = cx + x3 * R * persp
-                val Y = cy + y4 * R * persp
-                if (s == 0) ringPath.moveTo(X, Y) else ringPath.lineTo(X, Y)
-                if (s == sparkAt.toInt()) { sparkX = X; sparkY = Y }
-            }
-            c.drawPath(ringPath, ringPaint)
-            dotPaint.color = Color.rgb(225, 245, 255)
-            dotPaint.alpha = 255
-            c.drawCircle(sparkX, sparkY, 2.6f * d, dotPaint)
-            dotPaint.color = GOLD
-            dotPaint.alpha = 70
-            c.drawCircle(sparkX, sparkY, 7f * d, dotPaint)
-        }
-
-        // ---- bright core ----
-        val pulse = 1f + 0.22f * energy * sin(t * 6f)
+        // halo and disc
         c.save()
-        c.translate(cx, cy)
-        val cs = R * 0.55f * pulse / 100f
-        c.scale(cs, cs)
-        c.drawCircle(0f, 0f, 100f, corePaint)
+        c.scale(2.6f, 2.6f)
+        haloPaint.alpha = (150 + 105 * energy).toInt().coerceIn(0, 255)
+        c.drawCircle(0f, 0f, 1f, haloPaint)
         c.restore()
-        coreRingPaint.alpha = (140 + 90 * energy).toInt().coerceAtMost(255)
-        c.drawCircle(cx, cy, R * 0.16f * pulse, coreRingPaint)
+        c.drawCircle(0f, 0f, 1.5f, discPaint)
 
+        val e = energy
+
+        // outer graduated scale (ticks), slowly turning
+        c.save()
+        c.rotate(rot * 0.12f)
+        line.shader = null
+        line.pathEffect = null
+        line.color = BRIGHT
+        line.strokeWidth = 1.2f * px
+        line.alpha = (90 + 80 * e).toInt()
+        c.drawLines(tickLines, line)
+        c.restore()
+        arc(c, 1.53f, 0f, 360f, 1.3f * px, CYAN, 120)
+
+        // ring A: three thick arc segments, clockwise
+        c.save()
+        c.rotate(rot * 0.55f)
+        arc(c, 1.40f, 0f, 96f, 5.5f * px, CYAN, (190 + 60 * e).toInt().coerceAtMost(255))
+        arc(c, 1.40f, 130f, 58f, 5.5f * px, CYAN, (190 + 60 * e).toInt().coerceAtMost(255))
+        arc(c, 1.40f, 215f, 34f, 5.5f * px, BRIGHT, 255)
+        arc(c, 1.40f, 270f, 70f, 5.5f * px, CYAN, (190 + 60 * e).toInt().coerceAtMost(255))
+        c.restore()
+
+        // ring B: dashed circle, counter-clockwise
+        c.save()
+        c.rotate(-rot * 0.8f)
+        line.shader = null
+        line.color = BRIGHT
+        line.strokeWidth = 1.6f * px
+        line.alpha = 170
+        line.pathEffect = DashPathEffect(floatArrayOf(0.035f, 0.06f), 0f)
+        box.set(-1.27f, -1.27f, 1.27f, 1.27f)
+        c.drawArc(box, 0f, 360f, false, line)
+        line.pathEffect = null
+        c.restore()
+
+        // ring C: segmented reactor ring, clockwise
+        c.save()
+        c.rotate(rot * 0.35f)
+        for (i in 0 until 12) {
+            arc(c, 1.13f, i * 30f + 3f, 24f, 8f * px, if (i % 4 == 0) BRIGHT else CYAN, (150 + 100 * e).toInt().coerceAtMost(255))
+        }
+        c.restore()
+        arc(c, 1.02f, 0f, 360f, 1.4f * px, CYAN, 150)
+
+        // radar sweep
+        c.save()
+        c.rotate(rot * (1.6f + 0.4f * speed))
+        c.drawCircle(0f, 0f, 1.0f, sweepPaint)
+        c.restore()
+
+        // voice bars (the part that reacts to sound)
+        line.shader = null
+        line.pathEffect = null
+        line.strokeCap = Paint.Cap.ROUND
+        line.color = BRIGHT
+        line.strokeWidth = 5.2f * px
+        for (i in 0 until BARS) {
+            val n = abs(sin(i * 0.71f + t * (2.2f + 1.6f * speed)) * cos(i * 0.33f - t * 1.3f))
+            val len = 0.03f + (0.045f + 0.30f * e) * (0.25f + 0.75f * n)
+            val r0 = 0.64f
+            val r1 = r0 + len
+            line.alpha = (110 + 140 * n * (0.4f + e)).toInt().coerceIn(60, 255)
+            c.drawLine(bc[i] * r0, bs[i] * r0, bc[i] * r1, bs[i] * r1, line)
+        }
+        line.strokeCap = Paint.Cap.BUTT
+
+        // inner rotating arcs
+        c.save()
+        c.rotate(-rot * 1.5f)
+        arc(c, 0.52f, 0f, 70f, 4f * px, BRIGHT, 230)
+        arc(c, 0.52f, 120f, 70f, 4f * px, CYAN, 210)
+        arc(c, 0.52f, 240f, 70f, 4f * px, BRIGHT, 230)
+        c.restore()
+        arc(c, 0.43f, 0f, 360f, 1.2f * px, CYAN, 140)
+
+        // core
+        val pulse = 1f + 0.16f * e * sin(t * 6.5f)
+        c.save()
+        c.scale(0.46f * pulse, 0.46f * pulse)
+        c.drawCircle(0f, 0f, 1f, corePaint)
+        c.restore()
+        arc(c, 0.17f * pulse, 0f, 360f, 1.6f * px, Color.WHITE, 200)
+
+        // little orbiting beacons on the dashed ring
+        for (s in 0 until 3) {
+            val a = (-rot * 0.8f + s * 120f) * PI.toFloat() / 180f
+            fillP.shader = null
+            fillP.color = Color.WHITE
+            fillP.alpha = 255
+            c.drawCircle(cos(a) * 1.27f, sin(a) * 1.27f, 3.2f * px, fillP)
+            fillP.color = CYAN
+            fillP.alpha = 70
+            c.drawCircle(cos(a) * 1.27f, sin(a) * 1.27f, 9f * px, fillP)
+        }
+
+        c.restore()
         postInvalidateOnAnimation()
     }
 }
