@@ -24,13 +24,13 @@ class ReportActivity : Activity() {
 
     private class ChartView(ctx: Context, val title: String, val labels: List<String>, val values: List<Int>) : View(ctx) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val colors = listOf("#FFC107", "#FF9800", "#FFB74D", "#FFD54F", "#FFE082", "#FFCA28").map { Color.parseColor(it) }
+        private val colors = listOf("#2F8CFF", "#1E6BFF", "#5AA9FF", "#7DC3FF", "#9AD7FF", "#3D7BFF").map { Color.parseColor(it) }
 
         override fun onDraw(c: Canvas) {
-            c.drawColor(Color.parseColor("#0B0F14"))
+            c.drawColor(Color.parseColor("#050A18"))
             val w = width.toFloat()
             val d = resources.displayMetrics.density
-            p.color = Color.parseColor("#FFD54F")
+            p.color = Color.parseColor("#7DC3FF")
             p.textSize = 22f * d
             p.typeface = Typeface.DEFAULT_BOLD
             c.drawText(title, 24f * d, 70f * d, p)
@@ -46,7 +46,7 @@ class ReportActivity : Activity() {
                 val len = (w - 48f * d) * values[i] / max
                 p.color = colors[i % colors.size]
                 c.drawRoundRect(RectF(24f * d, y, 24f * d + len.coerceAtLeast(6f * d), y + barH), 8f * d, 8f * d, p)
-                p.color = Color.parseColor("#0B0F14")
+                p.color = Color.parseColor("#050A18")
                 p.textSize = 14f * d
                 p.typeface = Typeface.DEFAULT_BOLD
                 c.drawText("₹${values[i]}", 34f * d, y + barH * 0.68f, p)

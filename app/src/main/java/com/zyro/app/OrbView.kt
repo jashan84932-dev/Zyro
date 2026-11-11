@@ -36,9 +36,9 @@ class OrbView(context: Context) : View(context) {
         private const val N = 240            // points on the sphere
         private const val RING_STEPS = 96
         private const val CAMERA = 5f        // perspective distance
-        private val GOLD = Color.rgb(255, 181, 46)
-        private val GOLD_BRIGHT = Color.rgb(255, 214, 107)
-        private val GOLD_DEEP = Color.rgb(200, 112, 12)
+        private val GOLD = Color.rgb(47, 140, 255)
+        private val GOLD_BRIGHT = Color.rgb(140, 210, 255)
+        private val GOLD_DEEP = Color.rgb(20, 70, 190)
     }
 
     /** Asked every frame, so the orb always follows the assistant. */
@@ -90,6 +90,13 @@ class OrbView(context: Context) : View(context) {
         color = GOLD_BRIGHT
     }
 
+    private val DUST = 46
+    private val dustX = FloatArray(DUST) { (it * 0.6180339f) % 1f }
+    private val dustY = FloatArray(DUST) { (it * 0.7548776f) % 1f }
+    private val dustV = FloatArray(DUST) { 0.012f + 0.02f * ((it * 37) % 10) / 10f }
+    private val dustA = FloatArray(DUST) { 0.3f + 0.7f * ((it * 53) % 10) / 10f }
+    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
     // animation state
     private var last = 0L
     private var t = 0f
@@ -131,15 +138,20 @@ class OrbView(context: Context) : View(context) {
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        bgPaint.shader = android.graphics.LinearGradient(
+            0f, 0f, 0f, h.toFloat(),
+            intArrayOf(Color.rgb(3, 6, 16), Color.rgb(7, 16, 40), Color.rgb(3, 7, 20)),
+            floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP
+        )
         // gradients are built around (0,0) with radius 100 and scaled when drawn
         glowPaint.shader = RadialGradient(
             0f, 0f, 100f,
-            intArrayOf(Color.argb(120, 255, 176, 40), Color.argb(40, 255, 140, 10), Color.argb(0, 255, 120, 0)),
+            intArrayOf(Color.argb(130, 40, 120, 255), Color.argb(44, 20, 80, 255), Color.argb(0, 10, 50, 255)),
             floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP
         )
         corePaint.shader = RadialGradient(
             0f, 0f, 100f,
-            intArrayOf(Color.argb(255, 255, 246, 205), Color.argb(200, 255, 200, 80), Color.argb(0, 255, 150, 0)),
+            intArrayOf(Color.argb(255, 235, 248, 255), Color.argb(210, 110, 190, 255), Color.argb(0, 30, 100, 255)),
             floatArrayOf(0f, 0.30f, 1f), Shader.TileMode.CLAMP
         )
     }
@@ -180,8 +192,16 @@ class OrbView(context: Context) : View(context) {
         val cy = h / 2f
         val R = min(w, h) * 0.26f * (1f + 0.10f * energy)
 
-        // ---- background ----
-        c.drawColor(Color.rgb(5, 8, 12))
+        // ---- background: deep navy gradient + soft drifting dust ----
+        c.drawRect(0f, 0f, w, h, bgPaint)
+        for (q in 0 until DUST) {
+            dustY[q] -= dustV[q] * dt
+            if (dustY[q] < -0.02f) { dustY[q] = 1.02f; dustX[q] = (q * 0.6180339f + t * 0.01f) % 1f }
+            val tw = 0.5f + 0.5f * sin(t * 1.3f + q)
+            dotPaint.color = GOLD_BRIGHT
+            dotPaint.alpha = (30 + 60 * tw * dustA[q]).toInt()
+            c.drawCircle(dustX[q] * w, dustY[q] * h, (0.6f + 1.2f * dustA[q]) * d, dotPaint)
+        }
 
         // ---- big soft glow behind ----
         c.save()
@@ -288,7 +308,7 @@ class OrbView(context: Context) : View(context) {
                 if (s == sparkAt.toInt()) { sparkX = X; sparkY = Y }
             }
             c.drawPath(ringPath, ringPaint)
-            dotPaint.color = Color.rgb(255, 246, 205)
+            dotPaint.color = Color.rgb(225, 245, 255)
             dotPaint.alpha = 255
             c.drawCircle(sparkX, sparkY, 2.6f * d, dotPaint)
             dotPaint.color = GOLD
