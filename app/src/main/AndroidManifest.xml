@@ -119,6 +119,8 @@
             android:exported="false"
             android:grantUriPermissions="true" />
 
+        <activity android:name=".HoloActivity" android:exported="false" android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" android:screenOrientation="portrait" />
+
         <service
             android:name=".NotifService"
             android:exported="true"
