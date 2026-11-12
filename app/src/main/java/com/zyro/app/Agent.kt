@@ -70,7 +70,11 @@ object Agent {
         val explicit = TRIGGERS.any { tn.contains(Local.strip(it)) }
         val smart = !explicit && APPS.any { tn.contains(Local.strip(it)) } && ACTS.any { tn.contains(Local.strip(it)) } &&
             (rl.contains(" par ") || rl.contains(" पर ") || rl.contains(" me ") || rl.contains(" में ") || rl.contains(" on ") || rl.contains(" se ") || rl.contains(" से "))
-        if (!explicit && !smart) return null
+        val connectors = listOf("phir", "फिर", "uske baad", "उसके बाद", "then", "jakar", "जाकर", "jaakar", "karke", "करके")
+        val multi = !explicit && !smart && raw.trim().split(Regex("\\s+")).size >= 9 &&
+            connectors.any { tn.contains(Local.strip(it)) } &&
+            listOf("open", "kholo", "खोल", "baat", "बात", "upload", "bhej", "भेज", "search", "ढूंढ", "download", "लिख", "likh").any { tn.contains(Local.strip(it)) }
+        if (!explicit && !smart && !multi) return null
         if (running) return "मैं पहले से एक काम कर रहा हूँ। उसे रोकना हो तो बोलो रुको।"
         var job = raw.trim()
         for (tr in TRIGGERS) {

@@ -164,6 +164,9 @@ object Prefs {
     var liveProxy: String
         get() = read("liveProxy", "")
         set(v) = write("liveProxy", v.trim())
+    var githubToken: String
+        get() = read("githubToken", "")
+        set(v) = write("githubToken", v.trim())
     var liveToken: String
         get() = read("liveToken", "")
         set(v) = write("liveToken", v.trim())

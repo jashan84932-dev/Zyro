@@ -549,10 +549,6 @@ class Assistant private constructor(private val app: Context) {
     private fun think(text: String) {
         val gen = ++generation
         state("Thinking…", OrbView.THINK)
-        // if the answer takes long, say something so it does not feel dead
-        main.postDelayed({
-            if (gen == generation && mode == OrbView.THINK) voice.speak("हम्म, एक सेकंड।") { }
-        }, 3000)
         Thread {
             val reply = try {
                 if (Smart.persona != null && !Smart.modeCommand(text)) {
@@ -567,7 +563,7 @@ class Assistant private constructor(private val app: Context) {
             }
             main.post {
                 if (gen != generation) return@post
-                log("${Prefs.friendName}: $reply")
+                if (reply.isNotBlank()) log("${Prefs.friendName}: $reply")
                 state("Speaking…", OrbView.SPEAK)
                 speakThenListen(reply)
             }
@@ -575,6 +571,12 @@ class Assistant private constructor(private val app: Context) {
     }
 
     private fun speakThenListen(reply: String) {
+        if (reply.isBlank()) {
+            // silent success: the action itself is the answer
+            awakeUntil = System.currentTimeMillis() + 25_000
+            if (active) listen() else state("Ready", OrbView.IDLE)
+            return
+        }
         voice.overrideLang = Smart.speakLang()
         if (Gestures.quiet()) {
             // phone is face down: do not talk, just keep listening

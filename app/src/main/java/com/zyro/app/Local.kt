@@ -224,7 +224,7 @@ object Local {
     private fun openAppReply(hands: Hands, app: String): String? {
         val r = hands.openApp(app)
         return when {
-            r.startsWith("Opened ") -> "ठीक है, " + r.removePrefix("Opened ").trimEnd('.') + " खोल रहा हूँ।"
+            r.startsWith("Opened ") -> "" // silent: the app opening is the answer
             r.startsWith("No installed app") -> null // maybe it was not an app request at all - let the AI decide
             else -> fail(r)
         }

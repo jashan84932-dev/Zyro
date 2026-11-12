@@ -35,6 +35,7 @@ class SettingsActivity : Activity() {
     private lateinit var statusView: TextView
     private lateinit var proxyUrl: EditText
     private lateinit var proxyToken: EditText
+    private lateinit var githubTok: EditText
     private lateinit var logView: TextView
     private lateinit var logScroll: ScrollView
     private lateinit var apiKey: EditText
@@ -198,6 +199,10 @@ class SettingsActivity : Activity() {
         proxyToken = field("server password (APP_TOKEN)", secret = true, value = Prefs.liveToken)
         box.addView(proxyToken)
 
+        box.addView(label("GITHUB token (for 'GitHub par repo banao / files upload karo') - github.com > Settings > Developer settings > Tokens, repo permission"))
+        githubTok = field("ghp_... or github_pat_...", secret = true, value = Prefs.githubToken)
+        box.addView(githubTok)
+
         box.addView(label("Claude API key (optional)"))
         apiKey = field("leave empty if not needed", secret = true, value = Prefs.apiKey)
         box.addView(apiKey)
@@ -241,6 +246,7 @@ class SettingsActivity : Activity() {
         Prefs.apiKey = apiKey.text.toString()
         Prefs.liveProxy = proxyUrl.text.toString()
         Prefs.liveToken = proxyToken.text.toString()
+        Prefs.githubToken = githubTok.text.toString()
         Prefs.friendName = friendName.text.toString()
         Prefs.userName = userName.text.toString()
         Prefs.customVoice = customVoice.isChecked

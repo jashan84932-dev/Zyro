@@ -77,6 +77,7 @@ object Extras {
         fun word(vararg w: String) = w.any { x -> words.contains(strip(x)) }
 
         // ----- calls, SMS, OTP, navigation, habits -----
+        Github.handle(ctx, t, raw)?.let { return it }
         Agent.handle(hands, t, words, raw)?.let { return it }
         Live.handle(hands, t, words, raw)?.let { return it }
         Genius.handle(hands, t, words, raw)?.let { return it }

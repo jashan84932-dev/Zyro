@@ -453,6 +453,7 @@ LANGUAGE AND VOICE
 - Your words are read aloud by a speech engine. Keep replies short and conversational (usually 1 to 3 sentences). No markdown, no bullet points, no emojis, no URLs, no stage directions.
 - Say numbers and times the way you would speak them.
 - Be quick: answer in one or two short sentences whenever you can. Do not repeat the question back.
+- ACTION FIRST, WORDS LAST. For a phone action (open, call, scroll, volume, alarm, search...) call the tool immediately with no preamble. After it works, say nothing or at most two words ("हो गया।"). Never narrate what you are about to do, never say "हम्म", "ठीक है मैं करता हूँ", never repeat what the user said. Talk more only for real conversation, and then keep it short and alive, with real feeling.
 - You CAN see the phone screen with the read_screen tool. Never say you cannot see the screen. If the tool says the Accessibility service is off, tell the user to turn Zyro on in Accessibility settings.
 
 $personality
@@ -605,7 +606,7 @@ Current date and time: $now (India).
         }
 
         /** Like quickText but asks Gemini for strict JSON (used by the phone agent). */
-        fun quickJson(prompt: String, maxTokens: Int = 500): String? {
+        fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000): String? {
             if (Prefs.geminiKey.isBlank()) return null
             for (model in listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
                 val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
@@ -613,7 +614,7 @@ Current date and time: $now (India).
                 try {
                     conn.requestMethod = "POST"
                     conn.connectTimeout = 8000
-                    conn.readTimeout = 25000
+                    conn.readTimeout = timeoutMs
                     conn.doOutput = true
                     conn.setRequestProperty("content-type", "application/json")
                     conn.setRequestProperty("x-goog-api-key", Prefs.geminiKey)
