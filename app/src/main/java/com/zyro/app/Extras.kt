@@ -522,7 +522,7 @@ object Extras {
     // ------------------------------------------------------------------ camera
 
     private fun startCamera(ctx: Context, hands: Hands): String {
-        if (Prefs.geminiKey.isBlank()) return "फोटो देखने के लिए Gemini key चाहिए। Zyro की settings में डाल दो।"
+        if (!Prefs.hasGemini) return "फोटो देखने के लिए Gemini key चाहिए। Zyro की settings में डाल दो।"
         return try {
             hands.openActivity(Intent(ctx, CameraActivity::class.java))
             "कैमरा खुल रहा है। फोटो खींचकर OK दबा दो, फिर मैं बताऊँगा।"

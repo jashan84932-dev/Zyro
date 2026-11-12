@@ -646,7 +646,7 @@ object Pro {
         val docWord = listOf("bill", "बिल", "letter", "लेटर", "chitthi", "चिट्ठी", "document", "डॉक्यूमेंट", "kagaz", "कागज", "कागज़", "receipt", "रसीद", "notice", "नोटिस", "form", "फॉर्म").any { words.contains(s(it)) }
         val readWord = any("padho", "पढ़ो", "padh", "पढ़", "scan", "स्कैन", "samjhao", "समझाओ")
         if (docWord && readWord && !any("screen", "स्क्रीन")) {
-            if (Prefs.geminiKey.isBlank()) return "कागज़ पढ़ने के लिए Gemini key चाहिए।"
+            if (!Prefs.hasGemini) return "कागज़ पढ़ने के लिए Gemini key चाहिए।"
             return try {
                 docMode = true
                 hands.openActivity(Intent(ctx, CameraActivity::class.java))

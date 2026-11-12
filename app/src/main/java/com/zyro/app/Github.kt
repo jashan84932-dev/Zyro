@@ -25,7 +25,7 @@ object Github {
         // "claude se baat karke ..." style jobs need the phone agent, not the API
         if (tn.contains("claude") || tn.contains("क्लॉड") || tn.contains("क्लाउड") || tn.contains("chatgpt")) return null
         if (Prefs.githubToken.isBlank()) return "GitHub token चाहिए। Settings में GITHUB token डालो।"
-        if (Prefs.geminiKey.isBlank()) return "Gemini key चाहिए। Settings में डालो।"
+        if (!Prefs.hasGemini) return "Gemini key चाहिए। Settings में डालो।"
         if (busy) return "पिछला GitHub काम चल रहा है।"
         busy = true
         Thread {

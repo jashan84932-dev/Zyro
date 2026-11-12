@@ -132,7 +132,7 @@ object Agent {
     @Volatile private var task = ""
 
     fun start(ctx: Context, hands: Hands, job: String): String {
-        if (Prefs.geminiKey.isBlank()) return "एजेंट के लिए Gemini key चाहिए। सेटिंग में डालो।"
+        if (!Prefs.hasGemini) return "एजेंट के लिए Gemini key चाहिए। सेटिंग में डालो।"
         if (hands.service == null) return "एजेंट के लिए Accessibility में Zyro चालू करो।"
         if (running) return "मैं पहले से एक काम कर रहा हूँ।"
         running = true

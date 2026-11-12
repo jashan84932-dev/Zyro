@@ -317,7 +317,7 @@ object Plus {
             else -> null
         }
         if (prompt == null) return null
-        if (Prefs.geminiKey.isBlank()) return "इसके लिए Gemini key चाहिए।"
+        if (!Prefs.hasGemini) return "इसके लिए Gemini key चाहिए।"
         return try {
             camPrompt = prompt
             hands.openActivity(Intent(ctx, CameraActivity::class.java))

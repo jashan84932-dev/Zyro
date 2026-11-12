@@ -148,7 +148,7 @@ object Local {
             else -> ""
         }
         if (page.isNotEmpty()) {
-            return doIt(hands.openSettings(page), "सेटिंग्स खोल दी हैं, यहाँ से ON या OFF कर लो।")
+            return doIt(hands.openSettings(page), "सेटिंग्स खोल दी हैं, यहाँ से ON या OFF कर लो।", true)
         }
 
         // ----- timer -----
@@ -162,7 +162,7 @@ object Local {
                 }
                 val n = numberOf(words[i - 1])
                 if (mult > 0 && n != null) {
-                    return doIt(hands.setTimer(n * mult, ""), "ठीक है, $n ${unitName(mult)} का timer लगा दिया।")
+                    return doIt(hands.setTimer(n * mult, ""), "ठीक है, $n ${unitName(mult)} का timer लगा दिया।", true)
                 }
             }
         }
@@ -175,7 +175,7 @@ object Local {
                 val h12 = if (h % 12 == 0) 12 else h % 12
                 val part = when (h) { in 4..11 -> "सुबह"; in 12..15 -> "दोपहर"; in 16..19 -> "शाम"; else -> "रात" }
                 val spoken = if (m == 0) "$part के $h12 बजे" else "$part के $h12 बजकर $m मिनट"
-                return doIt(hands.setAlarm(h, m, ""), "ठीक है, $spoken का alarm लगा दिया।")
+                return doIt(hands.setAlarm(h, m, ""), "ठीक है, $spoken का alarm लगा दिया।", true)
             }
         }
 
@@ -193,12 +193,12 @@ object Local {
         // ----- call -----
         if (any("call", "कॉल", "फोन करो", "फोन लगा", "dial", "डायल")) {
             val digits = raw.filter { it.isDigit() }
-            if (digits.length >= 6) return doIt(hands.callNumber(digits), "ठीक है, कॉल लगा रहा हूँ।")
+            if (digits.length >= 6) return doIt(hands.callNumber(digits), "ठीक है, कॉल लगा रहा हूँ।", true)
             val name = extractQuery(t, emptyArray<String>(), false, true)
             if (name.isNotBlank() && words.size <= 6) {
                 if (!hands.hasContactsPermission()) return "Contacts की permission दे दो, फिर मैं नाम से कॉल लगा दूँगा।"
                 val c = hands.findContact(name) ?: return "$name नाम का contact मुझे नहीं मिला।"
-                return doIt(hands.callNumber(c.second), "ठीक है, ${c.first} को कॉल लगा रहा हूँ।")
+                return doIt(hands.callNumber(c.second), "ठीक है, ${c.first} को कॉल लगा रहा हूँ।", true)
             }
         }
 
@@ -314,7 +314,9 @@ object Local {
         else -> "ये काम नहीं हो पाया यार।"
     }
 
-    private fun doIt(result: String, okText: String): String = if (isOk(result)) okText else fail(result)
+    /** Silent on success (the action is the answer); only alarms, timers and calls are confirmed aloud. */
+    private fun doIt(result: String, okText: String, say: Boolean = false): String =
+        if (isOk(result)) (if (say) okText else "") else fail(result)
 
     private fun tvCommand(t: String, words: List<String>): String? {
         fun any(vararg w: String) = w.any { t.contains(strip(it)) }

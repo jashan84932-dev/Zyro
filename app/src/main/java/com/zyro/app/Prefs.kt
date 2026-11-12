@@ -164,6 +164,24 @@ object Prefs {
     var liveProxy: String
         get() = read("liveProxy", "")
         set(v) = write("liveProxy", v.trim())
+    /** True when Gemini is reachable: own key, or the Zyro server (proxy) is set. */
+    val hasGemini: Boolean get() = geminiKey.isNotBlank() || (liveProxy.isNotBlank() && liveToken.isNotBlank())
+
+    /** REST url for a Gemini model; goes through the Zyro server when one is set (key stays hidden). */
+    fun geminiUrl(model: String): String {
+        val p = liveProxy.trim()
+        if (p.isNotBlank() && liveToken.isNotBlank()) {
+            val base = p.replaceFirst("wss://", "https://").replaceFirst("ws://", "http://").trimEnd('/')
+            return "$base/rest/$model:generateContent"
+        }
+        return "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+    }
+
+    fun authGemini(c: java.net.HttpURLConnection) {
+        if (liveProxy.isNotBlank() && liveToken.isNotBlank()) c.setRequestProperty("x-app-token", liveToken)
+        else c.setRequestProperty("x-goog-api-key", geminiKey)
+    }
+
     var githubToken: String
         get() = read("githubToken", "")
         set(v) = write("githubToken", v.trim())

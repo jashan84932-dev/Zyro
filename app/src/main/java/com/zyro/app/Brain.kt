@@ -22,7 +22,7 @@ class Brain(private val hands: Hands) {
         val hist = Memory.history()
         return when {
             Prefs.apiKey.isNotBlank() -> replyClaude(userText, hist)
-            Prefs.geminiKey.isNotBlank() -> replyGemini(userText, hist)
+            Prefs.hasGemini -> replyGemini(userText, hist)
             else -> replyFree(userText, hist)
         }
     }
@@ -162,7 +162,7 @@ class Brain(private val hands: Hands) {
 
     /** Sends a photo to Gemini and returns a short spoken description. */
     fun describeImage(jpegBase64: String, prompt: String = "इस फोटो में क्या है? हिंदी (थोड़ी English मिलाकर) में 2-3 छोटे वाक्यों में बताओ, जैसे दोस्त को बता रहे हो।"): String {
-        if (Prefs.geminiKey.isBlank()) return "फोटो देखने के लिए Gemini key चाहिए।"
+        if (!Prefs.hasGemini) return "फोटो देखने के लिए Gemini key चाहिए।"
         val parts = JSONArray()
             .put(JSONObject().put("text", prompt))
             .put(JSONObject().put("inlineData", JSONObject().put("mimeType", "image/jpeg").put("data", jpegBase64)))
@@ -172,7 +172,7 @@ class Brain(private val hands: Hands) {
         val models = (listOf(Prefs.geminiModel) + GEMINI_FALLBACKS).distinct()
         var lastCode = 0
         for (model in models) {
-            val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
+            val conn = URL(Prefs.geminiUrl(model))
                 .openConnection() as HttpURLConnection
             try {
                 conn.requestMethod = "POST"
@@ -180,7 +180,7 @@ class Brain(private val hands: Hands) {
                 conn.readTimeout = 60000
                 conn.doOutput = true
                 conn.setRequestProperty("content-type", "application/json")
-                conn.setRequestProperty("x-goog-api-key", Prefs.geminiKey)
+                Prefs.authGemini(conn)
                 conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = conn.responseCode
                 lastCode = code
@@ -214,7 +214,7 @@ class Brain(private val hands: Hands) {
         val models = (listOf(Prefs.geminiModel) + GEMINI_FALLBACKS).distinct()
         var last: ApiError? = null
         for (model in models) {
-            val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
+            val conn = URL(Prefs.geminiUrl(model))
                 .openConnection() as HttpURLConnection
             try {
                 conn.requestMethod = "POST"
@@ -222,7 +222,7 @@ class Brain(private val hands: Hands) {
                 conn.readTimeout = 60000
                 conn.doOutput = true
                 conn.setRequestProperty("content-type", "application/json")
-                conn.setRequestProperty("x-goog-api-key", Prefs.geminiKey)
+                Prefs.authGemini(conn)
                 val sendBody = JSONObject(body.toString())
                 if (model.contains("2.5")) {
                     // thinking off = much faster answers
@@ -571,9 +571,9 @@ Current date and time: $now (India).
     companion object {
         /** One plain question to Gemini, no tools. Returns null when there is no key or no answer. */
         fun quickText(prompt: String, maxTokens: Int = 200, search: Boolean = false): String? {
-            if (Prefs.geminiKey.isBlank()) return null
+            if (!Prefs.hasGemini) return null
             for (model in if (search) listOf("gemini-2.5-flash", "gemini-2.5-flash-lite") else listOf("gemini-2.5-flash-lite", "gemini-2.5-flash")) {
-                val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
+                val conn = URL(Prefs.geminiUrl(model))
                     .openConnection() as HttpURLConnection
                 try {
                     conn.requestMethod = "POST"
@@ -581,7 +581,7 @@ Current date and time: $now (India).
                     conn.readTimeout = if (search) 25000 else 12000
                     conn.doOutput = true
                     conn.setRequestProperty("content-type", "application/json")
-                    conn.setRequestProperty("x-goog-api-key", Prefs.geminiKey)
+                    Prefs.authGemini(conn)
                     val body = JSONObject()
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                         .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
@@ -607,9 +607,9 @@ Current date and time: $now (India).
 
         /** Like quickText but asks Gemini for strict JSON (used by the phone agent). */
         fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000): String? {
-            if (Prefs.geminiKey.isBlank()) return null
+            if (!Prefs.hasGemini) return null
             for (model in listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
-                val conn = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
+                val conn = URL(Prefs.geminiUrl(model))
                     .openConnection() as HttpURLConnection
                 try {
                     conn.requestMethod = "POST"
@@ -617,7 +617,7 @@ Current date and time: $now (India).
                     conn.readTimeout = timeoutMs
                     conn.doOutput = true
                     conn.setRequestProperty("content-type", "application/json")
-                    conn.setRequestProperty("x-goog-api-key", Prefs.geminiKey)
+                    Prefs.authGemini(conn)
                     val body = JSONObject()
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                         .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("responseMimeType", "application/json").put("temperature", 0.2).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
