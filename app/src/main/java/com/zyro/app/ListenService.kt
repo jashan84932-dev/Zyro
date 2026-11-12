@@ -109,7 +109,9 @@ class ListenService : Service() {
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopIntent)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            val cam = Build.VERSION.SDK_INT >= 30 &&
+                checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or (if (cam) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0))
         } else {
             startForeground(NOTIF_ID, n)
         }

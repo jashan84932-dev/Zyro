@@ -143,6 +143,12 @@ class SettingsActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         })
 
+        box.addView(button("Air control: start / stop (hand gestures)") {
+            val a = Assistant.get(this)
+            val r = if (AirControl.running) AirControl.stop() else AirControl.start(this, a.hands)
+            Toast.makeText(this, r, Toast.LENGTH_LONG).show()
+        })
+
         box.addView(button("Allow Zyro to read notifications (optional)") {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         })

@@ -78,6 +78,7 @@ object Extras {
 
         // ----- calls, SMS, OTP, navigation, habits -----
         Github.handle(ctx, t, raw)?.let { return it }
+        AirControl.handle(ctx, hands, t)?.let { return it }
         Agent.handle(hands, t, words, raw)?.let { return it }
         Live.handle(hands, t, words, raw)?.let { return it }
         Genius.handle(hands, t, words, raw)?.let { return it }
