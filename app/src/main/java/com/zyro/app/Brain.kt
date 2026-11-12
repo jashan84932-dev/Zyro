@@ -238,7 +238,7 @@ class Brain(private val hands: Hands) {
                 val tryNext = code == 429 || code == 404 || code == 400 || code >= 500
                 if (!tryNext) throw err
             } finally {
-                conn.disconnect()
+                // keep the connection warm for the next question (no disconnect)
             }
         }
         throw last ?: ApiError(0, "no answer")
@@ -453,6 +453,7 @@ LANGUAGE AND VOICE
 - Your words are read aloud by a speech engine. Keep replies short and conversational (usually 1 to 3 sentences). No markdown, no bullet points, no emojis, no URLs, no stage directions.
 - Say numbers and times the way you would speak them.
 - Be quick: answer in one or two short sentences whenever you can. Do not repeat the question back.
+- FEELINGS: start every spoken reply with ONE mood tag in square brackets that fits how a caring person would feel right now: [calm] [happy] [excited] [playful] [sad] [worried] [serious] [tired] [gentle] [proud]. Example: "[happy] अरे वाह, बधाई हो!". React like a real person: be glad with good news, gentle when the user is low, a little playful when they joke, serious for warnings. Never mention the tag. A silent action needs no text and no tag.
 - ACTION FIRST, WORDS LAST. For a phone action (open, call, scroll, volume, alarm, search...) call the tool immediately with no preamble. After it works, say nothing or at most two words ("हो गया।"). Never narrate what you are about to do, never say "हम्म", "ठीक है मैं करता हूँ", never repeat what the user said. Talk more only for real conversation, and then keep it short and alive, with real feeling.
 - You CAN see the phone screen with the read_screen tool. Never say you cannot see the screen. If the tool says the Accessibility service is off, tell the user to turn Zyro on in Accessibility settings.
 

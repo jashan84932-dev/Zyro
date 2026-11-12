@@ -21,7 +21,9 @@ class ZyroService : AccessibilityService() {
         Assistant.get(this).hands.service = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (Teach.recording && event != null) Teach.onEvent(event)
+    }
 
     override fun onInterrupt() {}
 

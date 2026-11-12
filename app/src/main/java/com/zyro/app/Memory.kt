@@ -17,6 +17,29 @@ object Memory {
         Prefs.facts = JSONArray(list).toString()
     }
 
+    private var turns = 0
+
+    /** Every few turns, quietly pull lasting facts about the user out of the recent chat. */
+    fun learn() {
+        if (++turns % 4 != 0 || !Prefs.hasGemini) return
+        val h = history().takeLast(8)
+        if (h.isEmpty()) return
+        val chat = h.joinToString("\n") { (r, t) -> (if (r == "assistant") "Zyro: " else "User: ") + t.take(300) }
+        val known = facts().takeLast(40).joinToString("; ")
+        val j = Brain.quickJson(
+            "From this chat, list up to 3 NEW lasting facts about the USER that will help in future (name, family, work, goals, projects, routines, likes and dislikes, how they want Zyro to behave). " +
+                "Skip anything temporary, and never store passwords, ID or card numbers, health or money details. Already known: $known\n\nChat:\n$chat\n\n" +
+                "Reply strict JSON: {\"facts\":[\"short fact in the user's own words\"]} or {\"facts\":[]}",
+            200
+        ) ?: return
+        try {
+            val arr = org.json.JSONObject(j.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()).optJSONArray("facts") ?: return
+            for (i in 0 until minOf(3, arr.length())) addFact(arr.optString(i))
+        } catch (e: Exception) {
+            // ignore a bad answer
+        }
+    }
+
     fun addFact(fact: String) {
         val clean = fact.trim().take(300)
         if (clean.isEmpty()) return

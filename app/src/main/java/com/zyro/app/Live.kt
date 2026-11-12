@@ -74,6 +74,15 @@ object Live {
             }
             return "अभी लाइव मॉडल ${Prefs.liveModel} है।"
         }
+        if (any("live voice", "लाइव वॉइस", "live awaaz", "लाइव आवाज़", "live awaz", "लाइव आवाज")) {
+            val names = listOf("Charon", "Puck", "Kore", "Fenrir", "Aoede", "Orus", "Leda", "Zephyr", "Algenib", "Achird", "Sulafat", "Gacrux")
+            val v = names.firstOrNull { raw.contains(it, ignoreCase = true) }
+            if (v != null) {
+                Prefs.liveVoice = v
+                return "लाइव आवाज़ अब $v है। अगली बार लाइव शुरू करने पर सुनाई देगी।"
+            }
+            return "अभी लाइव आवाज़ ${Prefs.liveVoice} है। बदलने के लिए बोलो: live voice, और नाम, जैसे Puck, Kore, Fenrir, Aoede या Orus।"
+        }
         if (any("live mode", "लाइव मोड", "live baat", "लाइव बात", "seedhi baat", "सीधी बात", "live chat", "लाइव चैट", "live conversation", "लाइव कन्वर्सेशन")) {
             if (any("band", "बंद", "stop", "khatam", "खत्म", "off")) {
                 return if (active) { stop(); "लाइव मोड बंद।" } else "लाइव मोड चालू ही नहीं है।"
@@ -95,6 +104,7 @@ object Live {
         ready = false
         endAfterTurn = false
         modelTry = 0
+        plain = false
         val my = ++gen
         startedAt = System.currentTimeMillis()
         lastActivity = startedAt
@@ -122,6 +132,8 @@ object Live {
         Assistant.get(c).setLive(false)
         Assistant.get(c).note("${Prefs.friendName}: (लाइव मोड बंद)")
     }
+
+    @Volatile private var plain = false // true = retry without the optional voice setting
 
     private fun models(): List<String> = listOf(Prefs.liveModel, "gemini-3.1-flash-live-preview").distinct()
 
@@ -155,7 +167,10 @@ object Live {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (my != gen || !active) return
-                if (!ready && modelTry + 1 < models().size) {
+                if (!ready && !plain) {
+                    plain = true
+                    openSocket(my)
+                } else if (!ready && modelTry + 1 < models().size) {
                     modelTry++
                     openSocket(my)
                 } else if (!ready) {
@@ -167,7 +182,10 @@ object Live {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (my != gen || !active) return
-                if (!ready && modelTry + 1 < models().size) {
+                if (!ready && !plain) {
+                    plain = true
+                    openSocket(my)
+                } else if (!ready && modelTry + 1 < models().size) {
                     modelTry++
                     openSocket(my)
                 } else {
@@ -192,7 +210,8 @@ object Live {
         persona.append("Talk in natural Hinglish (Hindi in everyday Roman or Devanagari-sounding speech mixed with English), the way the user speaks. Keep answers short and warm, one to three sentences, unless asked for more. ")
         if (Prefs.jarvisMode) persona.append("Address the user as sir. ")
         persona.append("You can control the phone with tools: use phone_command for simple things (open an app, call someone, flashlight, volume, alarm, timer, WhatsApp message, music), ")
-        persona.append("and agent_task for multi-step jobs inside apps (ordering food, searching in an app). Say a short line before using a tool. ")
+        persona.append("and agent_task for multi-step jobs inside apps (ordering food, searching in an app). For simple commands call the tool at once and say at most two words afterwards; never narrate what you are about to do. ")
+        persona.append("Speak like a real person with real feelings: react naturally and let your tone follow the user's mood (glad for good news, gentle and slower when they are low, playful when they joke, serious for warnings). Short natural reactions are fine. Never sound like a robot and never say you are an AI model unless asked. ")
         persona.append("Now: ").append(java.text.SimpleDateFormat("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH).format(java.util.Date())).append(" (India). ")
         if (Prefs.userName.isNotBlank()) persona.append("The user's name is ").append(Prefs.userName).append(". ")
         try {
@@ -214,7 +233,9 @@ object Live {
             .put(JSONObject().put("name", "end_live").put("description", "End the live voice conversation."))
         return JSONObject().put("setup", JSONObject()
             .put("model", "models/$model")
-            .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("AUDIO")))
+            .put("generationConfig", JSONObject().put("responseModalities", JSONArray().put("AUDIO")).also { g ->
+                if (!plain) g.put("speechConfig", JSONObject().put("voiceConfig", JSONObject().put("prebuiltVoiceConfig", JSONObject().put("voiceName", Prefs.liveVoice))))
+            })
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", persona.toString()))))
             .put("tools", JSONArray().put(JSONObject().put("functionDeclarations", fn)))
             .put("inputAudioTranscription", JSONObject())

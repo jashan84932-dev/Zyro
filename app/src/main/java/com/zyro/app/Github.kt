@@ -71,6 +71,52 @@ Use only what was asked. If they named a repo, use exactly that name."""
         return "हो गया। $repo में $ok फाइल डाल दीं।"
     }
 
+    /** Creates the repo if needed and commits every file in order. Returns (owner, message); owner is null on failure. */
+    fun pushFiles(repoName: String, files: List<Pair<String, String>>, description: String): Pair<String?, String> {
+        if (Prefs.githubToken.isBlank()) return null to "GitHub token चाहिए। Settings में GITHUB token डालो।"
+        val repo = repoName.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9._-]"), "-")
+        val me = JSONObject(api("GET", "/user", null).second).optString("login")
+        if (me.isBlank()) return null to "GitHub token गलत है।"
+        val (code, body) = api("POST", "/user/repos", JSONObject().put("name", repo).put("private", false).put("description", description))
+        if (code != 201 && code != 422) return null to "Repo नहीं बना: ${JSONObject(body).optString("message")}"
+        for ((path, content) in files) {
+            val enc = Uri(path)
+            var sha: String? = null
+            val g = api("GET", "/repos/$me/$repo/contents/$enc", null)
+            if (g.first == 200) sha = JSONObject(g.second).optString("sha")
+            val put = JSONObject().put("message", "Add $path")
+                .put("content", Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+            if (sha != null) put.put("sha", sha)
+            val r = api("PUT", "/repos/$me/$repo/contents/$enc", put)
+            if (r.first !in 200..201) {
+                val why = JSONObject(r.second).optString("message")
+                return null to (if (path.startsWith(".github")) "वर्कफ़्लो फाइल नहीं गई। GitHub token में workflow की अनुमति दो। ($why)" else "$path नहीं गई: $why")
+            }
+        }
+        return me to "ok"
+    }
+
+    fun get(path: String): Pair<Int, String> = api("GET", path, null)
+
+    /** Puts a piece of text into a repo as one file (creates the repo if needed). Used by "clipboard GitHub par daalo". */
+    fun pushText(content: String, fileName: String, repoName: String): String {
+        if (Prefs.githubToken.isBlank()) return "GitHub token चाहिए। Settings में GITHUB token डालो।"
+        val repo = repoName.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9._-]"), "-").ifBlank { "zyro-notes" }
+        val me = JSONObject(api("GET", "/user", null).second).optString("login")
+        if (me.isBlank()) return "GitHub token गलत है।"
+        val (code, body) = api("POST", "/user/repos", JSONObject().put("name", repo).put("private", false))
+        if (code != 201 && code != 422) return "Repo नहीं बना: ${JSONObject(body).optString("message")}"
+        val enc = Uri(fileName)
+        var sha: String? = null
+        val g = api("GET", "/repos/$me/$repo/contents/$enc", null)
+        if (g.first == 200) sha = JSONObject(g.second).optString("sha")
+        val put = JSONObject().put("message", "Add $fileName")
+            .put("content", Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+        if (sha != null) put.put("sha", sha)
+        val r = api("PUT", "/repos/$me/$repo/contents/$enc", put)
+        return if (r.first in 200..201) "हो गया। $repo में $fileName डाल दी।" else "फाइल नहीं गई: ${JSONObject(r.second).optString("message")}"
+    }
+
     private fun Uri(path: String) = path.split("/").joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
 
     private fun api(method: String, path: String, body: JSONObject?): Pair<Int, String> {

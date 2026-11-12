@@ -152,6 +152,10 @@ object Prefs {
     var faceDownQuiet: Boolean
         get() = flag("faceDownQuiet", true)
         set(v) = setFlag("faceDownQuiet", v)
+    /** Jobs you showed Zyro with "seekho": {"name": [steps]} */
+    var taught: String
+        get() = read("taught", "{}")
+        set(v) = write("taught", v)
     var macros: String
         get() = read("macros", "[]")
         set(v) = write("macros", v)
@@ -182,6 +186,12 @@ object Prefs {
         else c.setRequestProperty("x-goog-api-key", geminiKey)
     }
 
+    var watchList: String
+        get() = read("watchList", "[]")
+        set(v) = write("watchList", v)
+    var feverLog: String
+        get() = read("feverLog", "[]")
+        set(v) = write("feverLog", v)
     var githubToken: String
         get() = read("githubToken", "")
         set(v) = write("githubToken", v.trim())
@@ -196,6 +206,10 @@ object Prefs {
     var autoReplyNote: String
         get() = read("autoReplyNote", "")
         set(v) = write("autoReplyNote", v)
+    /** Name of the Gemini Live voice (Charon, Puck, Kore, Fenrir, Aoede, Orus, Leda, Zephyr...). */
+    var liveVoice: String
+        get() = read("liveVoice", "Charon").ifBlank { "Charon" }
+        set(v) = write("liveVoice", v.trim())
     var liveModel: String
         get() = read("liveModel", "gemini-3.8-live").ifBlank { "gemini-3.8-live" }
         set(v) = write("liveModel", v.trim())

@@ -43,6 +43,7 @@ class NotifService : NotificationListenerService() {
             Assistant.get(applicationContext).announce(say)
         }
         if (n.category == Notification.CATEGORY_MESSAGE || s.packageName in MSG_APPS) {
+            Wow.onNotification(applicationContext, title, text)
             val act = n.actions?.firstOrNull { it.remoteInputs != null && it.remoteInputs.isNotEmpty() }
             if (act != null) {
                 last = LastMsg(s.packageName, app, title, text, act, System.currentTimeMillis())

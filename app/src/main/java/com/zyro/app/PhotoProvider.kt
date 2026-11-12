@@ -13,7 +13,8 @@ class PhotoProvider : ContentProvider() {
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
         val dir = context?.cacheDir ?: return null
-        val f = File(dir, "shot.jpg")
+        val name = uri.lastPathSegment?.takeIf { it.endsWith(".jpg") && !it.contains("/") && !it.contains("..") } ?: "shot.jpg"
+        val f = File(dir, name)
         if (!f.exists()) f.createNewFile()
         return ParcelFileDescriptor.open(f, ParcelFileDescriptor.parseMode(mode))
     }

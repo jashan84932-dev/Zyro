@@ -28,6 +28,9 @@ class Voice(private val ctx: Context) {
     private var player: MediaPlayer? = null
     private var onDone: (() -> Unit)? = null
     private var token = 0
+    private var basePitch = 1.0f
+    private var baseRate = 1.0f
+    @Volatile private var mood = "calm"
     /** Language tag used by the built-in voice for the next sentences (translator). Null = Hindi. */
     @Volatile var overrideLang: String? = null
 
@@ -38,9 +41,11 @@ class Voice(private val ctx: Context) {
                 hindiAvailable = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
                 if (Prefs.jarvisMode) {
                     // deeper, slightly slower and calmer
-                    tts?.setPitch(0.78f)
-                    tts?.setSpeechRate(0.93f)
+                    basePitch = 0.78f
+                    baseRate = 0.93f
                 }
+                tts?.setPitch(basePitch)
+                tts?.setSpeechRate(baseRate)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
                     override fun onDone(utteranceId: String?) { finish(utteranceId) }
@@ -58,7 +63,9 @@ class Voice(private val ctx: Context) {
             stopNow()
             val my = ++token
             onDone = done
-            val clean = text.take(1500)
+            val (m, body) = Emotion.parse(text)
+            mood = m
+            val clean = body.take(1500)
             if (overrideLang == null && Prefs.customVoice && Prefs.voiceKey.isNotBlank() && Prefs.voiceId.isNotBlank()) {
                 Thread {
                     val file = fetchCustom(clean)
@@ -111,7 +118,19 @@ class Voice(private val ctx: Context) {
             return
         }
         try { tts?.language = Locale.forLanguageTag(overrideLang ?: "hi-IN") } catch (e: Exception) { /* keep current */ }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, my.toString())
+        val st = Emotion.style(mood)
+        tts?.setPitch((basePitch * st.pitch).coerceIn(0.5f, 2f))
+        tts?.setSpeechRate((baseRate * st.rate).coerceIn(0.5f, 2f))
+        // speak sentence by sentence: the first one starts sooner, the callback fires after the last
+        val parts = text.split(Regex("(?<=[।.!?\\n])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size <= 1) {
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, my.toString())
+        } else {
+            for ((i, p) in parts.withIndex()) {
+                val id = if (i == parts.size - 1) my.toString() else "p$my"
+                tts?.speak(p, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id)
+            }
+        }
     }
 
     private fun playFile(file: File, my: Int): Boolean {

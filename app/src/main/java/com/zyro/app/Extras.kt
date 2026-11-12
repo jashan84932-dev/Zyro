@@ -78,6 +78,10 @@ object Extras {
 
         // ----- calls, SMS, OTP, navigation, habits -----
         Github.handle(ctx, t, raw)?.let { return it }
+        Wow.handle(ctx, hands, t, raw)?.let { return it }
+        Teach.handle(ctx, hands, t, raw)?.let { return it }
+        Genie.handle(ctx, hands, t, raw)?.let { return it }
+        Forge.handle(ctx, hands, t, raw)?.let { return it }
         AirControl.handle(ctx, hands, t)?.let { return it }
         Agent.handle(hands, t, words, raw)?.let { return it }
         Live.handle(hands, t, words, raw)?.let { return it }

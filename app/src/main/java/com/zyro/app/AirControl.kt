@@ -235,7 +235,13 @@ object AirControl {
     )
     private val STOPS = listOf("band", "बंद", "बन्द", "stop", "off", "khatam", "खत्म", "रोको", "ruko", "रुको")
 
+    @Volatile private var gain = 1.0f
+
     fun handle(ctx: Context, hands: Hands, t: String): String? {
+        if (running && (t.contains(Local.strip("cursor")) || t.contains(Local.strip("कर्सर")))) {
+            if (listOf("tez", "तेज़", "तेज", "fast", "badhao", "बढ़ाओ").any { t.contains(Local.strip(it)) }) { gain = (gain * 1.25f).coerceAtMost(2.2f); return "कर्सर तेज़ कर दिया।" }
+            if (listOf("dheema", "धीमा", "slow", "kam", "कम").any { t.contains(Local.strip(it)) }) { gain = (gain / 1.25f).coerceAtLeast(0.5f); return "कर्सर धीमा कर दिया।" }
+        }
         if (TRIGGERS.none { t.contains(Local.strip(it)) }) return null
         return if (STOPS.any { t.contains(Local.strip(it)) }) stop() else start(ctx, hands)
     }
@@ -543,8 +549,8 @@ object AirControl {
         when (stable) {
             OPEN -> {
                 // the middle part of the camera view covers the whole screen, so small hand moves are enough
-                val tx = (((px - 0.16f) / 0.68f).coerceIn(0f, 1f)) * screenW
-                val ty = (((py - 0.14f) / 0.62f).coerceIn(0f, 1f)) * screenH
+                val tx = ((((px - 0.5f) * gain / 0.68f) + 0.5f).coerceIn(0f, 1f)) * screenW
+                val ty = ((((py - 0.45f) * gain / 0.62f) + 0.5f).coerceIn(0f, 1f)) * screenH
                 curX = fx.filter(tx.toDouble(), now).toFloat()
                 curY = fy.filter(ty.toDouble(), now).toFloat()
                 trail.addLast(floatArrayOf(now.toFloat(), curX, curY))
@@ -554,8 +560,8 @@ object AirControl {
             FIST -> {
                 if (!dragging && d(px, py, fistPalmX, fistPalmY) > 0.07f) dragging = true
                 if (dragging) {
-                    dragX = (anchorX + (px - fistPalmX) / 0.68f * screenW).coerceIn(0f, screenW.toFloat())
-                    dragY = (anchorY + (py - fistPalmY) / 0.62f * screenH).coerceIn(0f, screenH.toFloat())
+                    dragX = (anchorX + (px - fistPalmX) * gain / 0.68f * screenW).coerceIn(0f, screenW.toFloat())
+                    dragY = (anchorY + (py - fistPalmY) * gain / 0.62f * screenH).coerceIn(0f, screenH.toFloat())
                     overlay?.fromX = anchorX
                     overlay?.fromY = anchorY
                     overlay?.dragLine = true

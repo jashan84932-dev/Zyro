@@ -26,7 +26,7 @@ object Agent {
 
     private class El(val id: Int, val node: AccessibilityNodeInfo, val label: String, val r: Rect, val clickable: Boolean, val editable: Boolean)
 
-    private val BLOCKED_PKGS = listOf(
+    internal val BLOCKED_PKGS = listOf(
         "com.google.android.apps.nbu.paisa.user", "com.phonepe.app", "net.one97.paytm", "in.org.npci.upiapp",
         "com.sbi.upi", "com.csam.icici.bank.imobile", "com.snapwork.hdfc", "com.axis.mobile", "com.dreamplug.androidapp",
         "com.freecharge.android", "com.amazon.mShop.android.shopping.pay", "com.android.settings", "com.android.packageinstaller",
@@ -222,8 +222,8 @@ object Agent {
         var same = 0
         var step = 0
         say("ठीक है, शुरू कर रहा हूँ।")
-        while (step < 25 && !cancelled) {
-            if (System.currentTimeMillis() - started > 5 * 60_000L) {
+        while (step < 40 && !cancelled) {
+            if (System.currentTimeMillis() - started > 8 * 60_000L) {
                 say("काम में बहुत देर लग गई, इसलिए रोक दिया।")
                 return
             }
@@ -335,14 +335,28 @@ Rules:
                 "open_app" -> {
                     val r = hands.openApp(j.optString("app", txt))
                     history.add("open_app ${j.optString("app", txt)} -> $r")
-                    Thread.sleep(2500)
+                    Thread.sleep(900)
                 }
                 "wait" -> Thread.sleep(2000)
                 else -> history.add("unknown action '$action'")
             }
-            Thread.sleep(1300)
+            settle(hands, sig)
         }
         if (cancelled) say("ठीक है, रुक गया।") else say("काफ़ी कोशिश की पर पूरा नहीं हुआ। बाकी आप देख लो।")
+    }
+
+    /** Waits only as long as the screen needs to change (up to ~2.2 s) instead of a fixed pause. */
+    private fun settle(hands: Hands, before: String) {
+        val end = System.currentTimeMillis() + 2200
+        Thread.sleep(250)
+        while (System.currentTimeMillis() < end && !cancelled) {
+            val o = observe(hands)
+            if (o != null && (o.first + o.third.hashCode()) != before) {
+                Thread.sleep(220) // let the animation finish
+                return
+            }
+            Thread.sleep(130)
+        }
     }
 
     private fun tapEl(hands: Hands, el: El): String {

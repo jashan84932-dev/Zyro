@@ -550,21 +550,27 @@ class Assistant private constructor(private val app: Context) {
     private fun think(text: String) {
         val gen = ++generation
         state("Thinking…", OrbView.THINK)
+        val t0 = android.os.SystemClock.uptimeMillis()
         Thread {
+            var usedAi = false
             val reply = try {
                 if (Smart.persona != null && !Smart.modeCommand(text)) {
+                    usedAi = true
                     brain.reply(Smart.wrap(text))
                 } else {
-                    Extras.chain(hands, text) { brain.reply(it) }
+                    Extras.chain(hands, text) { usedAi = true; brain.reply(it) }
                         ?: Local.handle(hands, text)?.also { Habit.record(text) }
-                        ?: brain.reply(text)
+                        ?: run { usedAi = true; brain.reply(text) }
                 }
             } catch (e: Exception) {
                 "सॉरी, कुछ गड़बड़ हो गई।"
             }
+            if (usedAi) Thread { try { Memory.learn() } catch (e: Exception) { /* ignore */ } }.start()
+            val took = android.os.SystemClock.uptimeMillis() - t0
             main.post {
                 if (gen != generation) return@post
-                if (reply.isNotBlank()) log("${Prefs.friendName}: $reply")
+                log("⏱ ${took} ms (" + (if (usedAi) "AI" else "instant") + ")")
+                if (reply.isNotBlank()) log("${Prefs.friendName}: ${Emotion.strip(reply)}")
                 state("Speaking…", OrbView.SPEAK)
                 speakThenListen(reply)
             }

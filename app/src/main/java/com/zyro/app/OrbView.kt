@@ -50,6 +50,9 @@ class OrbView(context: Context) : View(context) {
     var modeSource: (() -> Int)? = null
     var levelSource: (() -> Float)? = null
 
+    /** Hologram mode: pure black background, no sparks, centred - for a Pepper's-ghost pyramid. */
+    var holo = false
+
     private val d = resources.displayMetrics.density
 
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -85,6 +88,7 @@ class OrbView(context: Context) : View(context) {
 
     private class Spark(val a: Float, val rad: Float, val y: Float, val size: Float, val phase: Float, val speed: Float, val warm: Float)
     private val sparks: Array<Spark>
+    private val emptySparks: Array<Spark> = emptyArray()
 
     private class Ring(val tiltX: Float, val tiltZ: Float, val radius: Float, val speed: Float, val phase: Float, val beads: Int, val width: Float)
     private val rings = arrayOf(
@@ -211,22 +215,26 @@ class OrbView(context: Context) : View(context) {
         flare = lerp(flare, if (mode == THINK) 1f else 0f, 1f - exp(-dt * 3f))
 
         cx = w / 2f
-        cy = h * 0.45f
+        cy = if (holo) h * 0.5f else h * 0.45f
         R = min(w, h) * 0.205f * (1f + 0.05f * energy)
 
         // ---- background -------------------------------------------------------------------------
-        c.drawColor(Color.rgb(2, 5, 14))
-        glowP.shader = RadialGradient(
-            cx, cy, max(w, h) * 0.62f,
-            intArrayOf(Color.argb(95, 8, 55, 150), Color.argb(40, 5, 25, 90), Color.argb(0, 2, 5, 14)),
-            floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP
-        )
-        c.drawRect(0f, 0f, w, h, glowP)
-        glowP.shader = null
+        if (holo) {
+            c.drawColor(Color.BLACK)
+        } else {
+            c.drawColor(Color.rgb(2, 5, 14))
+            glowP.shader = RadialGradient(
+                cx, cy, max(w, h) * 0.62f,
+                intArrayOf(Color.argb(95, 8, 55, 150), Color.argb(40, 5, 25, 90), Color.argb(0, 2, 5, 14)),
+                floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP
+            )
+            c.drawRect(0f, 0f, w, h, glowP)
+            glowP.shader = null
+        }
 
         // ---- spark field (drifting in depth) ------------------------------------------------------
         val fieldYaw = spin * 0.10f
-        for (s in sparks) {
+        for (s in (if (holo) emptySparks else sparks)) {
             val ang = s.a + fieldYaw * s.speed
             val x = cos(ang) * s.rad
             val z = sin(ang) * s.rad
