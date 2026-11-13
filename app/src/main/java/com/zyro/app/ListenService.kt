@@ -70,6 +70,7 @@ class ListenService : Service() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_STOP) {
+            Live.stop()
             Assistant.get(this).stopConversation()
             stopSelf()
             return START_NOT_STICKY
@@ -81,7 +82,16 @@ class ListenService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        Assistant.get(this).startConversation()
+        val a = Assistant.get(this)
+        if (Prefs.liveOnly) {
+            val r = Live.start(this, a.hands, 0L)
+            if (!r.startsWith("ठीक है")) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(applicationContext, r, android.widget.Toast.LENGTH_LONG).show() }
+                stopSelf()
+            }
+        } else {
+            a.startConversation()
+        }
         return START_NOT_STICKY
     }
 
@@ -101,8 +111,8 @@ class ListenService : Service() {
         )
         @Suppress("DEPRECATION")
         val n = Notification.Builder(this, CHANNEL)
-            .setContentTitle("Zyro is listening")
-            .setContentText("Just talk to me. Tap Stop to turn me off.")
+            .setContentTitle("Zyro is live")
+            .setContentText("Just talk. Tap Stop to end.")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(openIntent)
             .setOngoing(true)

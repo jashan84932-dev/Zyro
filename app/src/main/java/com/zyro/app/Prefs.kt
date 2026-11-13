@@ -192,6 +192,10 @@ object Prefs {
     var feverLog: String
         get() = read("feverLog", "[]")
         set(v) = write("feverLog", v)
+    /** Live conversation is the main way to talk; the old listen-and-reply loop stays off. */
+    var liveOnly: Boolean
+        get() = flag("liveOnly", true)
+        set(v) = setFlag("liveOnly", v)
     var githubToken: String
         get() = read("githubToken", "")
         set(v) = write("githubToken", v.trim())

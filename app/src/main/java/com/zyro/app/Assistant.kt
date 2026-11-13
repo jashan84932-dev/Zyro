@@ -79,6 +79,19 @@ class Assistant private constructor(private val app: Context) {
     fun note(line: String) = main.post { log(line) }
 
     @Volatile var liveActive = false
+    private var liveMood = -1
+    private var liveMoodAt = 0L
+
+    /** While live: the orb listens when you talk and speaks when Zyro talks. */
+    fun liveLevel(l: Float, m: Int) {
+        level = l.coerceIn(0f, 1f)
+        val now = System.currentTimeMillis()
+        if (m != liveMood && now - liveMoodAt > 250) {
+            liveMood = m
+            liveMoodAt = now
+            main.post { if (liveActive) state("Live…", m) }
+        }
+    }
 
     /** Live voice mode owns the microphone while it runs; the normal listener steps aside. */
     fun setLive(on: Boolean) {
@@ -182,6 +195,7 @@ class Assistant private constructor(private val app: Context) {
 
     /** Queues a sentence (for example a new message) to be spoken as soon as Zyro is idle. */
     fun announce(text: String) {
+        if (liveActive && Live.say(text)) return
         if (!active) return
         while (announceQueue.size >= 5) announceQueue.poll()
         announceQueue.add(text)
@@ -308,7 +322,7 @@ class Assistant private constructor(private val app: Context) {
     // ---------- Listening ----------
 
     private fun listen() {
-        if (!active || liveActive) return
+        if (!active || liveActive || Prefs.liveOnly) return
         if (app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             log("Please allow the microphone first.")
             stopConversation()
@@ -636,7 +650,7 @@ class Assistant private constructor(private val app: Context) {
     private val STOP_WORDS = setOf("रुको", "रुक", "ruko", "ruk", "चुप", "chup", "stop", "बस", "bas", "ठहरो", "thehro", "रुकिए")
 
     private fun startBarge(gen: Int) {
-        if (!Prefs.bargeIn || !active || liveActive) return
+        if (!Prefs.bargeIn || !active || liveActive || Prefs.liveOnly) return
         main.post {
             if (!active || gen != generation) return@post
             try {

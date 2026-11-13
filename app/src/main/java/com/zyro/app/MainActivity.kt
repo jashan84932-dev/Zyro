@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.Toast
 
 /**
@@ -22,7 +21,6 @@ class MainActivity : Activity() {
 
     private lateinit var assistant: Assistant
     private lateinit var orb: OrbView
-    private lateinit var powerBtn: IconView
     private lateinit var liveBtn: IconView
     private lateinit var gearBtn: IconView
 
@@ -42,7 +40,7 @@ class MainActivity : Activity() {
         orb = OrbView(this).apply {
             modeSource = { assistant.mode }
             levelSource = { assistant.level }
-            setOnClickListener { toggle() }
+            setOnClickListener { toggleLive() }
         }
         root.addView(orb, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
@@ -55,29 +53,13 @@ class MainActivity : Activity() {
             marginEnd = dp(18)
         })
 
-        powerBtn = IconView(this, IconView.POWER) { assistant.active }.apply {
-            contentDescription = "Start or stop"
-            setOnClickListener { toggle() }
-        }
         liveBtn = IconView(this, IconView.LIVE) { Live.active }.apply {
             contentDescription = "Live conversation"
             setOnClickListener { toggleLive() }
         }
-        val bar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        bar.addView(powerBtn, LinearLayout.LayoutParams(dp(60), dp(60)).apply { marginEnd = dp(30) })
-        bar.addView(liveBtn, LinearLayout.LayoutParams(dp(84), dp(84)))
-        root.addView(bar, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(56) })
+        root.addView(liveBtn, FrameLayout.LayoutParams(dp(96), dp(96), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(56) })
 
         setContentView(root)
-    }
-
-    private fun toggle() {
-        if (assistant.active) assistant.stopConversation() else startTalking()
-        refresh()
     }
 
     private fun toggleLive() {
@@ -86,17 +68,7 @@ class MainActivity : Activity() {
             refresh()
             return
         }
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            startAfterPermission = false
-            Perms.request(this)
-            return
-        }
-        if (!assistant.active) ListenService.start(this)
-        orb.postDelayed({
-            val r = Live.start(this, assistant.hands, 0L)
-            if (r.isNotBlank() && !r.startsWith("ठीक है")) Toast.makeText(this, r, Toast.LENGTH_LONG).show()
-            refresh()
-        }, 1200)
+        startTalking()
     }
 
     private fun startTalking() {
@@ -131,7 +103,6 @@ class MainActivity : Activity() {
     }
 
     private fun refresh() {
-        powerBtn.invalidate()
         liveBtn.invalidate()
     }
 }

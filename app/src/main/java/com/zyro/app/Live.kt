@@ -131,6 +131,7 @@ object Live {
         val c = appCtx ?: return
         Assistant.get(c).setLive(false)
         Assistant.get(c).note("${Prefs.friendName}: (लाइव मोड बंद)")
+        if (Prefs.liveOnly) ListenService.stop(c)
     }
 
     @Volatile private var plain = false // true = retry without the optional voice setting
@@ -195,6 +196,17 @@ object Live {
         })
     }
 
+    /** Lets a background job (GitHub, Teach, reports...) speak through the live voice. */
+    fun say(text: String): Boolean {
+        val s = ws ?: return false
+        if (!active || !ready || text.isBlank()) return false
+        val msg = JSONObject().put("clientContent", JSONObject()
+            .put("turns", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text",
+                "[System notice: tell the user this now in one short natural sentence, in your own words, no tool call] $text")))))
+            .put("turnComplete", true))
+        return try { s.send(msg.toString()) } catch (e: Exception) { false }
+    }
+
     private fun fail(msg: String) {
         val c = appCtx
         stop()
@@ -210,6 +222,8 @@ object Live {
         persona.append("Talk in natural Hinglish (Hindi in everyday Roman or Devanagari-sounding speech mixed with English), the way the user speaks. Keep answers short and warm, one to three sentences, unless asked for more. ")
         if (Prefs.jarvisMode) persona.append("Address the user as sir. ")
         persona.append("You can control the phone with tools: use phone_command for simple things (open an app, call someone, flashlight, volume, alarm, timer, WhatsApp message, music), ")
+        persona.append("phone_command also runs ALL of these when the user asks, so pass their words straight through: WhatsApp and SMS, calls, reading messages, notifications digest, auto-reply, focus mode, photos and camera questions ('ye kya hai'), screen questions, hologram mode, air control (hand-gesture cursor), clipboard (read, summarise, translate, paste, put on GitHub), GitHub repo creation and file upload, building an Android app from an idea, teaching a routine ('seekho') and replaying it, fever log, world news report, making and sharing pictures, personalities, smart TV, timers, alarms, music, safety and find-my-phone. ")
+        persona.append("If a tool result asks the user a yes/no question, ask it aloud and then call phone_command again with their answer ('haan' or 'nahi'). Translation, summaries, writing and general chat you can do yourself. ")
         persona.append("and agent_task for multi-step jobs inside apps (ordering food, searching in an app). For simple commands call the tool at once and say at most two words afterwards; never narrate what you are about to do. ")
         persona.append("Speak like a real person with real feelings: react naturally and let your tone follow the user's mood (glad for good news, gentle and slower when they are low, playful when they joke, serious for warnings). Short natural reactions are fine. Never sound like a robot and never say you are an AI model unless asked. ")
         persona.append("Now: ").append(java.text.SimpleDateFormat("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH).format(java.util.Date())).append(" (India). ")
@@ -225,7 +239,7 @@ object Live {
         Smart.persona?.let { persona.append("Speaking style: ").append(it).append(" ") }
         persona.append("Never claim you did something unless the tool result says so. When the user says goodbye or wants to stop, call end_live.")
         val fn = JSONArray()
-            .put(decl("phone_command", "Run a phone command exactly as the user would say it, e.g. 'torch on', 'mummy ko call karo', 'volume badhao'.", "command", "The command in Hindi or English"))
+            .put(decl("phone_command", "Run ANY phone feature exactly as the user would say it, in their own words, e.g. 'torch on', 'mummy ko call karo', 'hologram chalao', 'clipboard github par daalo', 'ek calculator app banao'.", "command", "The command in Hindi or English"))
             .put(decl("agent_task", "Start the phone agent for a multi-step job inside apps, e.g. 'Zomato par 2 biryani order karo'. The agent asks the user for confirmation before paying.", "task", "The full task"))
             .put(decl("search_web", "Search the live web and get a short answer. Use for news, prices, scores, weather, any current fact.", "query", "What to look up"))
             .put(JSONObject().put("name", "read_screen").put("description", "Read what is currently on the phone screen."))
@@ -314,7 +328,14 @@ object Live {
                 "phone_command" -> {
                     val cmd = args.optString("command")
                     if (h == null || cmd.isBlank()) "no command"
-                    else Local.handle(h, cmd) ?: "That was not a phone command."
+                    else {
+                        val r = Extras.chain(h, cmd) { Brain(h).reply(it) } ?: Local.handle(h, cmd)
+                        when {
+                            r == null -> "That was not a phone command."
+                            r.isBlank() -> "done"
+                            else -> r
+                        }
+                    }
                 }
                 "agent_task" -> {
                     val c = appCtx
@@ -397,6 +418,7 @@ object Live {
                 while (active && my == gen) {
                     val n = r.read(buf, 0, buf.size)
                     if (n <= 0) continue
+                    if (System.currentTimeMillis() - lastPlay > 400) appCtx?.let { Assistant.get(it).liveLevel(rms(buf, n) / 4500f, OrbView.LISTEN) }
                     // without echo cancellation, stay half-duplex so the model does not hear itself
                     if (!hasAec && (playQ.isNotEmpty() || System.currentTimeMillis() - lastPlay < 350)) continue
                     val msg = JSONObject().put("realtimeInput", JSONObject().put("audio", JSONObject()
@@ -411,6 +433,7 @@ object Live {
                 while (active && my == gen) {
                     val chunk = playQ.poll(200, TimeUnit.MILLISECONDS) ?: continue
                     lastPlay = System.currentTimeMillis()
+                    appCtx?.let { Assistant.get(it).liveLevel(rms(chunk, chunk.size) / 6000f, OrbView.SPEAK) }
                     try { t.write(chunk, 0, chunk.size) } catch (e: Exception) { break }
                     lastPlay = System.currentTimeMillis()
                 }
@@ -433,6 +456,18 @@ object Live {
         } catch (e: Exception) {
             fail("ऑडियो शुरू नहीं हो पाया: ${e.message}")
         }
+    }
+
+    private fun rms(b: ByteArray, n: Int): Float {
+        var sum = 0.0
+        var i = 0
+        val cnt = n / 2
+        while (i + 1 < n) {
+            val s = ((b[i + 1].toInt() shl 8) or (b[i].toInt() and 0xFF)).toShort().toInt()
+            sum += s.toDouble() * s
+            i += 2
+        }
+        return if (cnt == 0) 0f else Math.sqrt(sum / cnt).toFloat()
     }
 
     private fun releaseAudio() {
