@@ -162,10 +162,6 @@ class SettingsActivity : Activity() {
             setOnCheckedChangeListener { _, v -> set(v) }
         }
         box.addView(option("Jarvis style (calm, formal, calls me Sir) - restart Zyro after changing", Prefs.jarvisMode) { Prefs.jarvisMode = it })
-        box.addView(option("Standby: stay ready all day; say \"wake up\" or \"Hey Zyro\" and Live starts", Prefs.standby) {
-            Prefs.standby = it
-            if (it) ListenService.start(this) else { Live.stop(); ListenService.stop(this) }
-        })
         box.addView(option("Wake word: answer only after I say \"Hey Zyro\"", Prefs.wakeWord) { Prefs.wakeWord = it })
         box.addView(option("Wake the screen when I say \"Hey Zyro\" and the phone is asleep", Prefs.autoWake) { Prefs.autoWake = it })
         box.addView(option("Let me interrupt Zyro by saying \"ruko\" / \"stop\"", Prefs.bargeIn) { Prefs.bargeIn = it })

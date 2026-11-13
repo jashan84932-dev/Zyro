@@ -181,6 +181,78 @@ object Prefs {
         return "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
     }
 
+
+    /** Last REST route used / failure reason, for clear spoken errors. */
+    @Volatile var lastRoute = ""
+    val viaProxy: Boolean get() = liveProxy.isNotBlank() && liveToken.isNotBlank()
+
+    private fun urlFor(model: String, proxy: Boolean): String {
+        if (proxy) {
+            val base = liveProxy.trim().replaceFirst("wss://", "https://").replaceFirst("ws://", "http://").trimEnd('/')
+            return "$base/rest/$model:generateContent"
+        }
+        return "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+    }
+
+    /**
+     * One Gemini REST call. Tries the Zyro server first (when set); if that fails for any reason
+     * and an own key exists, silently retries direct. One quick retry on 5xx. Returns (code, body); code 0 = no network.
+     */
+    fun gpost(model: String, body: String, connMs: Int, readMs: Int): Pair<Int, String> {
+        var last: Pair<Int, String> = Pair(0, "")
+        val routes = ArrayList<Boolean>()
+        if (viaProxy) routes.add(true)
+        if (geminiKey.isNotBlank() || !viaProxy) routes.add(false)
+        for (proxy in routes) {
+            for (attempt in 0..1) {
+                var conn: java.net.HttpURLConnection? = null
+                try {
+                    conn = java.net.URL(urlFor(model, proxy)).openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = connMs
+                    conn.readTimeout = readMs
+                    conn.doOutput = true
+                    conn.setRequestProperty("content-type", "application/json")
+                    if (proxy) conn.setRequestProperty("x-app-token", liveToken) else conn.setRequestProperty("x-goog-api-key", geminiKey)
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val code = conn.responseCode
+                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                    val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                    if (code in 200..299 && text.trimStart().startsWith("{")) {
+                        lastRoute = if (proxy) "server" else "direct"
+                        return Pair(code, text)
+                    }
+                    last = if (code in 200..299) Pair(502, text) else Pair(code, text)
+                    lastRoute = if (proxy) "server" else "direct"
+                    if (code >= 500 && attempt == 0) { Thread.sleep(350); continue }
+                    break
+                } catch (e: Exception) {
+                    last = Pair(0, e.message ?: "")
+                    lastRoute = if (proxy) "server" else "direct"
+                    break
+                } finally {
+                    // no disconnect: keeps the TLS connection warm for the next call (faster)
+                }
+            }
+        }
+        return last
+    }
+
+    /** Plain Hindi reason for a failed AI call. */
+    fun explainFail(code: Int, body: String): String {
+        val srv = lastRoute == "server"
+        return when {
+            code == 0 -> "नेट या सर्वर तक पहुँच नहीं पा रहा। इंटरनेट चेक करो।"
+            srv && (code == 401 || code == 403) -> "Zyro server का password गलत है। Settings में ZYRO SERVER का password चेक करो।"
+            srv && code == 404 -> "Server में नया worker.js deploy नहीं है। Cloudflare में नया कोड डालकर Deploy करो, या Settings में server खाली छोड़कर अपनी key डालो।"
+            srv && code == 429 -> "Server की आज की limit पूरी हो गई। कल या अपनी key डालकर चलाओ।"
+            code == 401 || code == 403 || (code == 400 && (body.contains("API key") || body.contains("API_KEY"))) -> "Gemini की key सही नहीं है। Settings में चेक करो।"
+            code == 429 -> "Gemini की free limit कुछ देर के लिए भर गई। एक मिनट बाद बोलो।"
+            code >= 500 -> "Gemini अभी busy है। एक बार फिर बोलो।"
+            else -> "जवाब नहीं आ पाया, error $code।"
+        }
+    }
+
     fun authGemini(c: java.net.HttpURLConnection) {
         if (liveProxy.isNotBlank() && liveToken.isNotBlank()) c.setRequestProperty("x-app-token", liveToken)
         else c.setRequestProperty("x-goog-api-key", geminiKey)
@@ -196,10 +268,6 @@ object Prefs {
     var liveOnly: Boolean
         get() = flag("liveOnly", true)
         set(v) = setFlag("liveOnly", v)
-    /** Standby: the phone waits quietly for "wake up" / "Hey Zyro", then Live starts by itself. */
-    var standby: Boolean
-        get() = flag("standby", false)
-        set(v) = setFlag("standby", v)
     var githubToken: String
         get() = read("githubToken", "")
         set(v) = write("githubToken", v.trim())

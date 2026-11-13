@@ -34,9 +34,9 @@ object Agent {
     )
 
     private val RISKY = listOf(
-        "pay", "place order", "order now", "buy", "purchase", "checkout", "confirm", "send", "submit", "delete", "remove",
-        "transfer", "book", "subscribe", "proceed", "continue to pay", "upi", "bid", "post", "tweet", "uninstall", "factory",
-        "भुगतान", "पेमेंट", "ऑर्डर", "खरीद", "भेज", "हटा", "डिलीट", "बुक", "कन्फर्म", "पक्का", "सबमिट"
+        "pay", "place order", "order now", "buy", "purchase", "checkout", "send", "delete", "remove",
+        "transfer", "book", "subscribe", "continue to pay", "upi", "tweet", "uninstall", "factory",
+        "भुगतान", "पेमेंट", "ऑर्डर", "खरीद", "भेज", "हटा", "डिलीट", "बुक"
     )
 
     fun init(ctx: Context) {
@@ -49,13 +49,14 @@ object Agent {
 
     private val APPS = listOf(
         "zomato", "swiggy", "blinkit", "zepto", "instamart", "amazon", "flipkart", "myntra", "meesho", "uber", "ola", "rapido",
-        "irctc", "makemytrip", "redbus", "bookmyshow", "youtube", "instagram", "spotify", "maps", "netflix", "hotstar", "gmail",
+        "irctc", "makemytrip", "redbus", "bookmyshow", "youtube", "instagram", "spotify", "maps", "netflix", "hotstar", "jiohotstar", "jio hotstar", "gmail", "prime video", "sonyliv", "zee5", "whatsapp", "telegram",
         "जोमैटो", "ज़ोमैटो", "स्विगी", "ब्लिंकिट", "ज़ेप्टो", "अमेज़न", "अमेजन", "फ्लिपकार्ट", "मिंत्रा", "उबर", "ओला", "रैपिडो"
     )
     private val ACTS = listOf(
         "order", "book", "buy", "search", "download", "install", "ऑर्डर", "बुक", "खरीद", "मंगा", "मँगा", "मंगवा", "ढूंढ", "खोज",
         "mangwa", "manga", "kharid", "dhundh", "khoj", "add to cart", "cart"
     )
+    private val ACTS2 = listOf("chalu", "चालू", "chala", "चला", "laga", "लगा", "play", "login", "log in", "लॉगिन", "dekh", "देख", "match", "मैच", "sign in")
     private val TRIGGERS = listOf(
         "agent", "एजेंट", "autopilot", "ऑटोपायलट", "khud kar", "खुद कर", "apne aap kar", "अपने आप कर", "mere liye kar", "मेरे लिए कर"
     )
@@ -70,11 +71,13 @@ object Agent {
         val explicit = TRIGGERS.any { tn.contains(Local.strip(it)) }
         val smart = !explicit && APPS.any { tn.contains(Local.strip(it)) } && ACTS.any { tn.contains(Local.strip(it)) } &&
             (rl.contains(" par ") || rl.contains(" पर ") || rl.contains(" me ") || rl.contains(" में ") || rl.contains(" on ") || rl.contains(" se ") || rl.contains(" से "))
+        val heavy = !explicit && !smart && APPS.any { tn.contains(Local.strip(it)) } && ACTS2.any { tn.contains(Local.strip(it)) } &&
+            (tn.contains(Local.strip("login")) || tn.contains(Local.strip("लॉगिन")) || tn.contains(Local.strip("karke")) || tn.contains(Local.strip("करके")) || raw.trim().split(Regex("\\s+")).size >= 6)
         val connectors = listOf("phir", "फिर", "uske baad", "उसके बाद", "then", "jakar", "जाकर", "jaakar", "karke", "करके")
         val multi = !explicit && !smart && raw.trim().split(Regex("\\s+")).size >= 9 &&
             connectors.any { tn.contains(Local.strip(it)) } &&
             listOf("open", "kholo", "खोल", "baat", "बात", "upload", "bhej", "भेज", "search", "ढूंढ", "download", "लिख", "likh").any { tn.contains(Local.strip(it)) }
-        if (!explicit && !smart && !multi) return null
+        if (!explicit && !smart && !multi && !heavy) return null
         if (running) return "मैं पहले से एक काम कर रहा हूँ। उसे रोकना हो तो बोलो रुको।"
         var job = raw.trim()
         for (tr in TRIGGERS) {
@@ -156,8 +159,8 @@ object Agent {
         val pkg = root.packageName?.toString() ?: ""
         val list = ArrayList<El>()
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
-            if (list.size >= 70 || depth > 30) return
-            val label = if (n.isPassword) "(password field)" else listOfNotNull(n.text?.toString()?.take(70), n.contentDescription?.toString()?.take(70))
+            if (list.size >= 55 || depth > 30) return
+            val label = if (n.isPassword) "(password field)" else listOfNotNull(n.text?.toString()?.take(50), n.contentDescription?.toString()?.take(50))
                 .filter { it.isNotBlank() }.joinToString(" | ")
             val interesting = label.isNotEmpty() || n.isClickable || n.isEditable
             if (interesting && n.isVisibleToUser) {
@@ -174,7 +177,7 @@ object Agent {
         val sb = StringBuilder()
         for (e in list) {
             sb.append(e.id).append(": ")
-            sb.append(if (e.label.isEmpty()) "(no label)" else "\"" + e.label + "\"")
+            sb.append(if (e.label.isEmpty()) "(no label @${e.r.centerX()},${e.r.centerY()})" else "\"" + e.label + "\"")
             val f = ArrayList<String>()
             if (e.clickable) f.add("tap")
             if (e.editable) f.add("input")
@@ -215,15 +218,99 @@ object Agent {
         return if (cancelled || r.isNullOrBlank()) null else r
     }
 
+    @Volatile private var planText = ""
+
+    private val APP_NAMES = mapOf(
+        "hotstar" to listOf("JioHotstar", "Hotstar", "Disney+ Hotstar"),
+        "jiohotstar" to listOf("JioHotstar", "Hotstar", "Disney+ Hotstar"),
+        "jio hotstar" to listOf("JioHotstar", "Hotstar", "Disney+ Hotstar"),
+        "prime video" to listOf("Prime Video", "Amazon Prime Video"),
+        "prime" to listOf("Prime Video", "Amazon Prime Video")
+    )
+
+    private fun openSmart(hands: Hands, name: String): String {
+        val names = (APP_NAMES[low(name).trim()] ?: emptyList()) + name
+        var last = ""
+        for (n in names) {
+            last = hands.openApp(n)
+            if (last.startsWith("Opened")) return last
+        }
+        return last
+    }
+
+    /** Hands over to the user (password, OTP ...) and continues by itself once they are done. Returns false on timeout / cancel. */
+    private fun waitForUser(hands: Hands, msg: String, pwd: Boolean): Boolean {
+        userReply = null
+        awaiting = "ask"
+        say(msg)
+        val begin = System.currentTimeMillis()
+        val end = begin + 5 * 60_000L
+        var sawInput = true
+        while (!cancelled && System.currentTimeMillis() < end) {
+            if (userReply != null) break
+            Thread.sleep(1000)
+            val o = observe(hands) ?: continue
+            val waited = System.currentTimeMillis() - begin
+            if (waited < 6000) continue
+            val stillPwd = o.second.any { it.label == "(password field)" }
+            val anyInput = o.second.any { it.editable }
+            if (pwd && !stillPwd) break
+            if (!pwd) {
+                if (anyInput) sawInput = true
+                if (sawInput && !anyInput) break
+            }
+        }
+        val ok = !cancelled && System.currentTimeMillis() < end
+        awaiting = null
+        userReply = null
+        return ok
+    }
+
+    private fun verifyDone(hands: Hands, job: String, history: List<String>): Pair<Boolean, String> {
+        val o = observe(hands) ?: return Pair(true, "")
+        val p = buildString {
+            append("Task given to a phone agent: \"").append(job).append("\"\n")
+            append("Current app: ").append(o.first).append("\nScreen elements:\n").append(o.third)
+            append("Recent actions:\n"); history.takeLast(8).forEach { append("- ").append(it).append('\n') }
+            append("""
+Is the task REALLY completed right now, judging only from the screen? A login page, home page, loading spinner, search page, error, popup, or a list where the item is not yet playing/added/opened means NOT complete. For 'play/start something' the player or live content must be visible.
+Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if not complete"}""")
+        }
+        val r = Brain.quickJson(p, 160, 12000, true) ?: return Pair(true, "")
+        return try {
+            val j = JSONObject(r.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim())
+            Pair(j.optBoolean("complete", true), j.optString("next", j.optString("why", "")))
+        } catch (e: Exception) { Pair(true, "") }
+    }
+
     private fun loop(ctx: Context, hands: Hands, job: String) {
         val history = ArrayList<String>()
-        val started = System.currentTimeMillis()
+        var started = System.currentTimeMillis()
         var lastSig = ""
         var same = 0
         var step = 0
+        var failPush = 0
+        var doneRejects = 0
+        var mainApp = ""
+        var notInstalled = 0
+        planText = ""
+        Thread {
+            planText = Brain.quickText(
+                "A phone agent must do this task on an Android phone: \"$job\". Write a short numbered plan (max 6 steps, each under 10 words) including likely obstacles " +
+                    "(login with phone number + OTP, permission popups, ads, 'update app', profile pick, slow loading) and how to get past each. Plain text, no preface.",
+                260
+            ) ?: ""
+        }.start()
+        // open the named app right away, no AI call needed for that
+        val jl = low(job)
+        val first = APPS.firstOrNull { it.all { c -> c.code < 128 } && jl.contains(it) }
+        if (first != null) {
+            val r = openSmart(hands, first)
+            if (r.startsWith("Opened")) { mainApp = first; history.add("open_app $first -> $r"); Thread.sleep(1200) }
+        }
         say("ठीक है, शुरू कर रहा हूँ।")
-        while (step < 40 && !cancelled) {
-            if (System.currentTimeMillis() - started > 8 * 60_000L) {
+        while (step < 90 && !cancelled) {
+            if (System.currentTimeMillis() - started > 15 * 60_000L) {
                 say("काम में बहुत देर लग गई, इसलिए रोक दिया।")
                 return
             }
@@ -231,7 +318,7 @@ object Agent {
             val obs = observe(hands)
             if (obs == null) {
                 Thread.sleep(1000)
-                if (step > 3 && history.isEmpty()) {
+                if (step > 4 && history.isEmpty()) {
                     say("स्क्रीन पढ़ नहीं पा रहा। फोन अनलॉक करो।")
                     return
                 }
@@ -245,28 +332,46 @@ object Agent {
             val sig = pkg + text.hashCode()
             same = if (sig == lastSig) same + 1 else 0
             lastSig = sig
+            // automatic recovery when nothing changes
+            if (same >= 4 && same % 4 == 0) {
+                history.add("auto: screen stuck, pressed back -> " + hands.press("back"))
+                Thread.sleep(800)
+            }
+            if (same >= 9 && mainApp.isNotBlank()) {
+                history.add("auto: stuck for long, reopened $mainApp -> " + openSmart(hands, mainApp))
+                same = 0
+                Thread.sleep(1500)
+            }
             val prompt = buildString {
-                append("You are an agent that operates an Android phone for the user. User's task: \"").append(job).append("\"\n")
-                append("The user speaks Hindi/English/Hinglish; reply fields in the same style.\n")
+                append("You are an expert, persistent agent that operates an Android phone for the user. User's task: \"").append(job).append("\"\n")
+                append("The user speaks Hindi/English/Hinglish; the 'say' field must be in the same style, short.\n")
+                val plan = planText
+                if (plan.isNotBlank()) append("Your plan:\n").append(plan).append('\n')
                 append("Current app package: ").append(pkg).append("\n")
-                append("Screen elements (id: label [tap/input]):\n").append(text.ifEmpty { "(nothing readable)\n" })
+                append("Screen elements (id: label [tap/input]); '(no label @x,y)' means an icon at that screen position:\n").append(text.ifEmpty { "(nothing readable - maybe loading or a video; try wait, back, or tap_xy)\n" })
                 append("Actions done so far:\n")
-                if (history.isEmpty()) append("(none)\n") else history.takeLast(10).forEach { append("- ").append(it).append('\n') }
-                if (same >= 2) append("WARNING: the screen did not change after your last actions. Try something different (scroll, back, another element).\n")
+                if (history.isEmpty()) append("(none)\n") else history.takeLast(8).forEach { append("- ").append(it).append('\n') }
+                if (same >= 2) append("WARNING: the screen did not change after your last actions. Do something DIFFERENT (another element, scroll, back, tap_xy on an icon).\n")
                 append("""
 Choose ONE next action and reply with ONLY JSON:
-{"thought":"short reason","action":"tap|type|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|done|fail","id":0,"text":"","app":"","say":""}
+{"thought":"short reason","action":"tap|tap_xy|type|type_enter|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|wait_user|done|fail","id":0,"x":0,"y":0,"text":"","app":"","say":""}
 Rules:
-- tap: id = element number. type: id = input element number (or 0 for the focused box), text = text to type. enter: press the keyboard search/enter key. open_app: app = app name (do this first if the right app is not open).
-- If the task is finished, use done and put a short spoken result in say. If impossible or stuck, use fail with the reason in say.
-- If you need information only the user knows (address choice, size, which item), use ask_user with the question in say.
-- Never type passwords, OTPs or PINs. Never enter payment details. Do not skip the confirmation: tap the final order/pay/send button only when the task clearly asks for it; the app asks the user separately.
-- Prefer search boxes, then results; scroll if the item is not visible. One action at a time.
+- tap: id = element number. tap_xy: x,y screen position (for icons without label, player controls, close X). type: id = input element number (0 = focused box), text = text. type_enter: type the text then press search/enter in ONE step (use for search boxes). enter: press keyboard search/enter. open_app: app = name (do it first if the right app is not open).
+- You must FINISH the task. Obstacles are normal and YOU solve them: dismiss popups/ads/rating/update/notification dialogs (Skip, Not now, Later, Close, X, Got it, Maybe later), allow normal app permissions, choose a profile if asked, wait when loading, scroll to find things, use the search box, try another tab/menu/icon, go back and retry a different route. Never give up on the first problem. Use fail only after you truly tried many different ways, and explain exactly what blocks you.
+- Login: if the app needs login and the phone/email field is empty, use ask_user to get the phone number or email, type it, then continue. When an OTP is asked, use ask_user to get the OTP from the user (they read it from their SMS) and type it. Passwords, PINs and card details: NEVER type them; use wait_user with a short message so the user enters them, you continue automatically afterwards.
+- done only when the goal is really visible on screen (e.g. the match is actually playing). Put a short spoken result in say.
+- ask_user: only for facts only the user knows. Do not ask permission for normal steps.
+- Do not tap the final order/pay/send/subscribe button unless the task clearly asks for it; the app asks the user separately.
 """)
             }
-            val reply = Brain.quickJson(prompt, 400)
+            var reply: String? = null
+            for (t in 0..2) {
+                reply = Brain.quickJson(prompt, 260)
+                if (reply != null) break
+                Thread.sleep(500)
+            }
             if (reply == null) {
-                say("इंटरनेट या Gemini से जवाब नहीं मिला। रुक रहा हूँ।")
+                say("इंटरनेट या Gemini से जवाब नहीं मिल रहा। रुक रहा हूँ।")
                 return
             }
             val j = try { JSONObject(reply.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()) } catch (e: Exception) {
@@ -281,28 +386,64 @@ Rules:
             if (cancelled) break
             when (action) {
                 "done" -> {
+                    if (doneRejects < 4) {
+                        val (ok, next) = verifyDone(hands, job, history)
+                        if (!ok) {
+                            doneRejects++
+                            history.add("NOT finished yet (check says): $next")
+                            settle(hands, sig)
+                            continue
+                        }
+                    }
                     say(sayText.ifBlank { "काम हो गया।" })
                     return
                 }
                 "fail" -> {
-                    say(sayText.ifBlank { "मैं यह नहीं कर पाया।" })
-                    return
+                    failPush++
+                    if (failPush <= 3) {
+                        history.add("You said fail (\"${sayText.take(60)}\") but giving up is not allowed yet. Try another route: scroll, search, other tab/menu, back, reopen the app, tap_xy.")
+                    } else {
+                        val r = askUser((sayText.ifBlank { "यहाँ अटक गया हूँ।" }) + " क्या करूँ?")
+                        if (r == null) {
+                            if (!cancelled) say(sayText.ifBlank { "मैं यह नहीं कर पाया।" })
+                            return
+                        }
+                        history.add("stuck; user guidance: $r")
+                        failPush = 0
+                    }
                 }
                 "ask_user" -> {
+                    val t0 = System.currentTimeMillis()
                     val r = askUser(sayText.ifBlank { "मुझे थोड़ी जानकारी चाहिए।" })
+                    started += System.currentTimeMillis() - t0
                     if (r == null) {
                         if (!cancelled) say("जवाब नहीं मिला, काम रोक दिया।")
                         return
                     }
                     history.add("asked user, user said: $r")
                 }
+                "wait_user" -> {
+                    val t0 = System.currentTimeMillis()
+                    val ok = waitForUser(hands, sayText.ifBlank { "यह आप खुद डाल दो, मैं यहीं इंतज़ार करता हूँ।" }, false)
+                    started += System.currentTimeMillis() - t0
+                    if (!ok) {
+                        if (!cancelled) say("काफ़ी इंतज़ार किया, काम रोक रहा हूँ।")
+                        return
+                    }
+                    history.add("user handled the screen, continuing")
+                }
                 "tap" -> {
                     if (el == null) {
                         history.add("tap failed: no element $id")
                     } else {
                         if (el.label == "(password field)") {
-                            say("यहाँ पासवर्ड माँगा जा रहा है, वह आप खुद डालो।")
-                            return
+                            val t0 = System.currentTimeMillis()
+                            val ok = waitForUser(hands, "पासवर्ड आप खुद डाल दो, मैं यहीं इंतज़ार करता हूँ।", true)
+                            started += System.currentTimeMillis() - t0
+                            if (!ok) { if (!cancelled) say("इंतज़ार बहुत हो गया, रुक रहा हूँ।"); return }
+                            history.add("user entered password, continuing")
+                            settle(hands, sig)
+                            continue
                         }
                         if (risky(el.label)) {
                             val ok = confirm("\"" + el.label.take(40) + "\" दबाने जा रहा हूँ। पक्का? हाँ या नहीं बोलो।")
@@ -315,10 +456,21 @@ Rules:
                         history.add("tapped $id \"${el.label.take(40)}\" -> $r")
                     }
                 }
+                "tap_xy" -> {
+                    val x = j.optInt("x", -1)
+                    val y = j.optInt("y", -1)
+                    if (x < 0 || y < 0) history.add("tap_xy needs x and y")
+                    else history.add("tapped position $x,$y -> " + hands.tap(x, y))
+                }
                 "type" -> {
                     if (el != null && el.label == "(password field)") {
-                        say("यहाँ पासवर्ड है, वह आप खुद डालो।")
-                        return
+                        val t0 = System.currentTimeMillis()
+                        val ok = waitForUser(hands, "पासवर्ड आप खुद डाल दो, मैं यहीं इंतज़ार करता हूँ।", true)
+                        started += System.currentTimeMillis() - t0
+                        if (!ok) { if (!cancelled) say("इंतज़ार बहुत हो गया, रुक रहा हूँ।"); return }
+                        history.add("user entered password, continuing")
+                        settle(hands, sig)
+                        continue
                     }
                     if (el != null) {
                         tapEl(hands, el)
@@ -327,17 +479,32 @@ Rules:
                     val r = hands.typeText(txt)
                     history.add("typed \"$txt\" -> $r")
                 }
+                "type_enter" -> {
+                    if (el != null) { tapEl(hands, el); Thread.sleep(350) }
+                    val r1 = hands.typeText(txt)
+                    Thread.sleep(250)
+                    history.add("typed \"$txt\" -> $r1; enter -> " + pressEnter(hands))
+                }
                 "enter" -> history.add("enter -> " + pressEnter(hands))
                 "scroll_down" -> history.add("scroll down -> " + hands.scroll(true))
                 "scroll_up" -> history.add("scroll up -> " + hands.scroll(false))
                 "back" -> history.add("back -> " + hands.press("back"))
                 "home" -> history.add("home -> " + hands.press("home"))
                 "open_app" -> {
-                    val r = hands.openApp(j.optString("app", txt))
-                    history.add("open_app ${j.optString("app", txt)} -> $r")
+                    val nm = j.optString("app", txt)
+                    val r = openSmart(hands, nm)
+                    history.add("open_app $nm -> $r")
+                    if (r.startsWith("Opened")) { if (mainApp.isBlank()) mainApp = nm; notInstalled = 0 }
+                    else {
+                        notInstalled++
+                        if (notInstalled >= 2) {
+                            say("$nm फोन में इंस्टॉल नहीं मिल रहा। Play Store से इंस्टॉल करके फिर बोलो।")
+                            return
+                        }
+                    }
                     Thread.sleep(900)
                 }
-                "wait" -> Thread.sleep(2000)
+                "wait" -> Thread.sleep(2500)
                 else -> history.add("unknown action '$action'")
             }
             settle(hands, sig)
@@ -348,14 +515,14 @@ Rules:
     /** Waits only as long as the screen needs to change (up to ~2.2 s) instead of a fixed pause. */
     private fun settle(hands: Hands, before: String) {
         val end = System.currentTimeMillis() + 2200
-        Thread.sleep(250)
+        Thread.sleep(120)
         while (System.currentTimeMillis() < end && !cancelled) {
             val o = observe(hands)
             if (o != null && (o.first + o.third.hashCode()) != before) {
-                Thread.sleep(220) // let the animation finish
+                Thread.sleep(140) // let the animation finish
                 return
             }
-            Thread.sleep(130)
+            Thread.sleep(80)
         }
     }
 

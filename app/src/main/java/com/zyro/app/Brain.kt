@@ -71,7 +71,7 @@ class Brain(private val hands: Hands) {
             return when {
                 e.code == 401 || e.code == 403 -> "लगता है API key सही नहीं है। Settings में एक बार चेक कर लो।"
                 e.code == 429 -> "अरे, थोड़ा रुको, बहुत जल्दी-जल्दी requests हो गईं। थोड़ी देर बाद फिर बोलो।"
-                e.code >= 500 -> "अभी सर्वर busy है यार, थोड़ी देर बाद try करते हैं।"
+                e.code >= 500 -> Prefs.explainFail(e.code, e.body)
                 else -> "कुछ गड़बड़ हो गई, error ${e.code}।"
             }
         } catch (e: IOException) {
@@ -141,14 +141,7 @@ class Brain(private val hands: Hands) {
                 }
             }
         } catch (e: ApiError) {
-            return when {
-                e.code == 400 && (e.body.contains("API key") || e.body.contains("API_KEY")) ->
-                    "लगता है Gemini की key सही नहीं है। Settings में एक बार चेक कर लो।"
-                e.code == 401 || e.code == 403 -> "Gemini की key काम नहीं कर रही। Settings में चेक कर लो।"
-                e.code == 429 -> "अरे, Gemini की free limit थोड़ी देर के लिए पूरी हो गई। एक मिनट रुककर फिर बोलो।"
-                e.code >= 500 -> "Gemini का server अभी busy है, error ${e.code}. थोड़ी देर बाद फिर बोलो।"
-                else -> "Gemini से जवाब नहीं आया, error ${e.code}."
-            }
+            return Prefs.explainFail(e.code, e.body)
         } catch (e: IOException) {
             return "इंटरनेट नहीं चल रहा लगता है। नेट चेक करो, फिर बात करते हैं।"
         } catch (e: Exception) {
@@ -172,34 +165,19 @@ class Brain(private val hands: Hands) {
         val models = (listOf(Prefs.geminiModel) + GEMINI_FALLBACKS).distinct()
         var lastCode = 0
         for (model in models) {
-            val conn = URL(Prefs.geminiUrl(model))
-                .openConnection() as HttpURLConnection
-            try {
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 20000
-                conn.readTimeout = 60000
-                conn.doOutput = true
-                conn.setRequestProperty("content-type", "application/json")
-                Prefs.authGemini(conn)
-                conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                val code = conn.responseCode
-                lastCode = code
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-                if (code in 200..299) {
+            val (code, text) = Prefs.gpost(model, body.toString(), 20000, 60000)
+            lastCode = code
+            if (code in 200..299) {
+                try {
                     val ps = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")
                     val sb = StringBuilder()
                     if (ps != null) for (i in 0 until ps.length()) sb.append(ps.optJSONObject(i)?.optString("text", "") ?: "")
                     val out = sb.toString().trim()
                     return if (out.isNotEmpty()) out else "फोटो से मुझे कुछ समझ नहीं आया।"
-                }
-                if (!(code == 429 || code == 404 || code >= 500)) break
-            } catch (e: Exception) {
-                lastCode = -1
-            } finally {
-                conn.disconnect()
+                } catch (e: Exception) { continue }
             }
+            if (!(code == 0 || code == 429 || code == 404 || code >= 500)) break
         }
         return "फोटो नहीं देख पाया (error $lastCode)। थोड़ी देर बाद फिर कोशिश करो।"
     }
@@ -214,32 +192,17 @@ class Brain(private val hands: Hands) {
         val models = (listOf(Prefs.geminiModel) + GEMINI_FALLBACKS).distinct()
         var last: ApiError? = null
         for (model in models) {
-            val conn = URL(Prefs.geminiUrl(model))
-                .openConnection() as HttpURLConnection
-            try {
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 20000
-                conn.readTimeout = 60000
-                conn.doOutput = true
-                conn.setRequestProperty("content-type", "application/json")
-                Prefs.authGemini(conn)
-                val sendBody = JSONObject(body.toString())
-                if (model.contains("2.5")) {
-                    // thinking off = much faster answers
-                    sendBody.getJSONObject("generationConfig").put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
-                }
-                conn.outputStream.use { it.write(sendBody.toString().toByteArray(Charsets.UTF_8)) }
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-                if (code in 200..299) return JSONObject(text)
-                val err = ApiError(code, text)
-                last = err
-                val tryNext = code == 429 || code == 404 || code == 400 || code >= 500
-                if (!tryNext) throw err
-            } finally {
-                // keep the connection warm for the next question (no disconnect)
+            val sendBody = JSONObject(body.toString())
+            if (model.contains("2.5")) {
+                // thinking off = much faster answers
+                sendBody.getJSONObject("generationConfig").put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
             }
+            val (code, text) = Prefs.gpost(model, sendBody.toString(), 20000, 60000)
+            if (code in 200..299) return JSONObject(text)
+            val err = ApiError(code, text)
+            last = err
+            val tryNext = code == 0 || code == 429 || code == 404 || code == 400 || code >= 500
+            if (!tryNext) throw err
         }
         throw last ?: ApiError(0, "no answer")
     }
@@ -574,22 +537,13 @@ Current date and time: $now (India).
         fun quickText(prompt: String, maxTokens: Int = 200, search: Boolean = false): String? {
             if (!Prefs.hasGemini) return null
             for (model in if (search) listOf("gemini-2.5-flash", "gemini-2.5-flash-lite") else listOf("gemini-2.5-flash-lite", "gemini-2.5-flash")) {
-                val conn = URL(Prefs.geminiUrl(model))
-                    .openConnection() as HttpURLConnection
                 try {
-                    conn.requestMethod = "POST"
-                    conn.connectTimeout = 8000
-                    conn.readTimeout = if (search) 25000 else 12000
-                    conn.doOutput = true
-                    conn.setRequestProperty("content-type", "application/json")
-                    Prefs.authGemini(conn)
                     val body = JSONObject()
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                         .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
                     if (search) body.put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
-                    conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                    if (conn.responseCode !in 200..299) continue
-                    val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val (code, text) = Prefs.gpost(model, body.toString(), 8000, if (search) 25000 else 12000)
+                    if (code !in 200..299) continue
                     val out = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")?.let { ps ->
                             val sb = StringBuilder()
@@ -599,32 +553,21 @@ Current date and time: $now (India).
                     if (!out.isNullOrBlank()) return out
                 } catch (e: Exception) {
                     // try next model
-                } finally {
-                    conn.disconnect()
                 }
             }
             return null
         }
 
         /** Like quickText but asks Gemini for strict JSON (used by the phone agent). */
-        fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000): String? {
+        fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000, lite: Boolean = false): String? {
             if (!Prefs.hasGemini) return null
-            for (model in listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
-                val conn = URL(Prefs.geminiUrl(model))
-                    .openConnection() as HttpURLConnection
+            for (model in if (lite) listOf("gemini-2.5-flash-lite", "gemini-2.5-flash") else listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
                 try {
-                    conn.requestMethod = "POST"
-                    conn.connectTimeout = 8000
-                    conn.readTimeout = timeoutMs
-                    conn.doOutput = true
-                    conn.setRequestProperty("content-type", "application/json")
-                    Prefs.authGemini(conn)
                     val body = JSONObject()
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                         .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("responseMimeType", "application/json").put("temperature", 0.2).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
-                    conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                    if (conn.responseCode !in 200..299) continue
-                    val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val (code, text) = Prefs.gpost(model, body.toString(), 8000, timeoutMs)
+                    if (code !in 200..299) continue
                     val out = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")?.let { ps ->
                             val sb = StringBuilder()
@@ -633,8 +576,6 @@ Current date and time: $now (India).
                         }
                     if (!out.isNullOrBlank()) return out
                 } catch (e: Exception) {
-                } finally {
-                    conn.disconnect()
                 }
             }
             return null
