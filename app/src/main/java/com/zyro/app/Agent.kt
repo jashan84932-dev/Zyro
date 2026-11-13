@@ -155,7 +155,16 @@ object Agent {
 
     private fun observe(hands: Hands): Triple<String, List<El>, String>? {
         val svc = hands.service ?: return null
-        val root = svc.rootInActiveWindow ?: return null
+        var root = svc.rootInActiveWindow
+        if (root == null) {
+            // fallback: pick the active application window
+            try {
+                root = svc.windows.filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
+                    .sortedByDescending { if (it.isActive) 2 else if (it.isFocused) 1 else 0 }
+                    .firstNotNullOfOrNull { it.root }
+            } catch (e: Exception) {}
+        }
+        if (root == null) return null
         val pkg = root.packageName?.toString() ?: ""
         val list = ArrayList<El>()
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
@@ -219,6 +228,8 @@ object Agent {
     }
 
     @Volatile private var planText = ""
+    @Volatile private var progress = ""
+    private var planThread: Thread? = null
 
     private val APP_NAMES = mapOf(
         "hotstar" to listOf("JioHotstar", "Hotstar", "Disney+ Hotstar"),
@@ -271,9 +282,9 @@ object Agent {
         val p = buildString {
             append("Task given to a phone agent: \"").append(job).append("\"\n")
             append("Current app: ").append(o.first).append("\nScreen elements:\n").append(o.third)
-            append("Recent actions:\n"); history.takeLast(8).forEach { append("- ").append(it).append('\n') }
+            append("Progress notes: ").append(progress).append("\nRecent actions:\n"); history.takeLast(8).forEach { append("- ").append(it).append('\n') }
             append("""
-Is the task REALLY completed right now, judging only from the screen? A login page, home page, loading spinner, search page, error, popup, or a list where the item is not yet playing/added/opened means NOT complete. For 'play/start something' the player or live content must be visible.
+Is the WHOLE task (every part the user asked for) REALLY completed right now, judging from the screen and the actions? A login page, home page, loading spinner, search page, error, popup, or a list where the item is not yet playing/added/opened means NOT complete. For 'play/start something' the player or live content must be visible.
 Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if not complete"}""")
         }
         val r = Brain.quickJson(p, 160, 12000, true) ?: return Pair(true, "")
@@ -293,14 +304,19 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         var doneRejects = 0
         var mainApp = ""
         var notInstalled = 0
+        var nullObs = 0
+        var logged = 0
         planText = ""
-        Thread {
+        progress = ""
+        val words = job.trim().split(Regex("\\s+")).size
+        planThread = Thread {
             planText = Brain.quickText(
-                "A phone agent must do this task on an Android phone: \"$job\". Write a short numbered plan (max 6 steps, each under 10 words) including likely obstacles " +
+                "A phone agent must do this task on an Android phone: \"$job\". Split it into its separate parts in the exact order the user said, then write a short numbered plan (max 8 steps, each under 10 words) including likely obstacles " +
                     "(login with phone number + OTP, permission popups, ads, 'update app', profile pick, slow loading) and how to get past each. Plain text, no preface.",
                 260
             ) ?: ""
-        }.start()
+        }
+        planThread?.start()
         // open the named app right away, no AI call needed for that
         val jl = low(job)
         val first = APPS.firstOrNull { it.all { c -> c.code < 128 } && jl.contains(it) }
@@ -308,7 +324,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
             val r = openSmart(hands, first)
             if (r.startsWith("Opened")) { mainApp = first; history.add("open_app $first -> $r"); Thread.sleep(1200) }
         }
-        say("ठीक है, शुरू कर रहा हूँ।")
+        if (words >= 8) try { planThread?.join(4000) } catch (e: Exception) {}
         while (step < 90 && !cancelled) {
             if (System.currentTimeMillis() - started > 15 * 60_000L) {
                 say("काम में बहुत देर लग गई, इसलिए रोक दिया।")
@@ -317,13 +333,18 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
             step++
             val obs = observe(hands)
             if (obs == null) {
-                Thread.sleep(1000)
-                if (step > 4 && history.isEmpty()) {
-                    say("स्क्रीन पढ़ नहीं पा रहा। फोन अनलॉक करो।")
+                nullObs++
+                Assistant.get(ctx).note("⚙ Agent: screen not readable ($nullObs)")
+                if (nullObs == 3) history.add("auto: screen unreadable, pressed back -> " + hands.press("back"))
+                if (nullObs >= 6) {
+                    say(if (hands.service == null) "Accessibility बंद हो गई है। Settings में Zyro की Accessibility एक बार बंद करके फिर चालू करो।"
+                        else "इस स्क्रीन को मैं पढ़ नहीं पा रहा, शायद फोन लॉक है या यह ऐप स्क्रीन छुपाता है। फोन अनलॉक करके फिर बोलो।")
                     return
                 }
+                Thread.sleep(900)
                 continue
             }
+            nullObs = 0
             val (pkg, els, text) = obs
             if (BLOCKED_PKGS.any { pkg.startsWith(it) }) {
                 say("यह पेमेंट या सिस्टम वाली स्क्रीन है, यहाँ मैं हाथ नहीं लगाता। बाकी आप कर लो।")
@@ -347,6 +368,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 append("The user speaks Hindi/English/Hinglish; the 'say' field must be in the same style, short.\n")
                 val plan = planText
                 if (plan.isNotBlank()) append("Your plan:\n").append(plan).append('\n')
+                if (progress.isNotBlank()) append("Your progress notes: ").append(progress).append('\n')
                 append("Current app package: ").append(pkg).append("\n")
                 append("Screen elements (id: label [tap/input]); '(no label @x,y)' means an icon at that screen position:\n").append(text.ifEmpty { "(nothing readable - maybe loading or a video; try wait, back, or tap_xy)\n" })
                 append("Actions done so far:\n")
@@ -354,11 +376,12 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 if (same >= 2) append("WARNING: the screen did not change after your last actions. Do something DIFFERENT (another element, scroll, back, tap_xy on an icon).\n")
                 append("""
 Choose ONE next action and reply with ONLY JSON:
-{"thought":"short reason","action":"tap|tap_xy|type|type_enter|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|wait_user|done|fail","id":0,"x":0,"y":0,"text":"","app":"","say":""}
+{"thought":"short reason","progress":"parts of the task already completed / parts still remaining","action":"tap|tap_xy|type|type_enter|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|wait_user|done|fail","id":0,"x":0,"y":0,"text":"","app":"","say":""}
 Rules:
 - tap: id = element number. tap_xy: x,y screen position (for icons without label, player controls, close X). type: id = input element number (0 = focused box), text = text. type_enter: type the text then press search/enter in ONE step (use for search boxes). enter: press keyboard search/enter. open_app: app = name (do it first if the right app is not open).
 - You must FINISH the task. Obstacles are normal and YOU solve them: dismiss popups/ads/rating/update/notification dialogs (Skip, Not now, Later, Close, X, Got it, Maybe later), allow normal app permissions, choose a profile if asked, wait when loading, scroll to find things, use the search box, try another tab/menu/icon, go back and retry a different route. Never give up on the first problem. Use fail only after you truly tried many different ways, and explain exactly what blocks you.
 - Login: if the app needs login and the phone/email field is empty, use ask_user to get the phone number or email, type it, then continue. When an OTP is asked, use ask_user to get the OTP from the user (they read it from their SMS) and type it. Passwords, PINs and card details: NEVER type them; use wait_user with a short message so the user enters them, you continue automatically afterwards.
+- The task can have SEVERAL parts. Do them ALL, in the order the user said. Update "progress" every step (what is finished, what remains). Never say done while a part remains.
 - done only when the goal is really visible on screen (e.g. the match is actually playing). Put a short spoken result in say.
 - ask_user: only for facts only the user knows. Do not ask permission for normal steps.
 - Do not tap the final order/pay/send/subscribe button unless the task clearly asks for it; the app asks the user separately.
@@ -392,6 +415,7 @@ Rules:
                 history.add("(bad reply, retrying)")
                 continue
             }
+            j.optString("progress", "").let { if (it.isNotBlank()) progress = it.take(300) }
             val action = low(j.optString("action"))
             val id = j.optInt("id", 0)
             val txt = j.optString("text", "")
@@ -521,6 +545,7 @@ Rules:
                 "wait" -> Thread.sleep(2500)
                 else -> history.add("unknown action '$action'")
             }
+            while (logged < history.size) { Assistant.get(ctx).note("⚙ " + history[logged]); logged++ }
             settle(hands, sig)
         }
         if (cancelled) say("ठीक है, रुक गया।") else say("काफ़ी कोशिश की पर पूरा नहीं हुआ। बाकी आप देख लो।")
