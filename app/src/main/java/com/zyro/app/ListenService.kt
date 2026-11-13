@@ -83,7 +83,7 @@ class ListenService : Service() {
             return START_NOT_STICKY
         }
         val a = Assistant.get(this)
-        if (Prefs.liveOnly) {
+        if (Prefs.liveOnly && !Prefs.standby) {
             val r = Live.start(this, a.hands, 0L)
             if (!r.startsWith("ठीक है")) {
                 android.os.Handler(android.os.Looper.getMainLooper()).post { android.widget.Toast.makeText(applicationContext, r, android.widget.Toast.LENGTH_LONG).show() }
@@ -111,8 +111,8 @@ class ListenService : Service() {
         )
         @Suppress("DEPRECATION")
         val n = Notification.Builder(this, CHANNEL)
-            .setContentTitle("Zyro is live")
-            .setContentText("Just talk. Tap Stop to end.")
+            .setContentTitle(if (Prefs.standby) "Zyro is on standby" else "Zyro is live")
+            .setContentText(if (Prefs.standby) "Say \"wake up\" or \"Hey Zyro\". Tap Stop to turn off." else "Just talk. Tap Stop to end.")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(openIntent)
             .setOngoing(true)

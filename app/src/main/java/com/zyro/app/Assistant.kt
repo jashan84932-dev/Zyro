@@ -277,7 +277,7 @@ class Assistant private constructor(private val app: Context) {
             failures = 0
             awakeUntil = System.currentTimeMillis() + 30_000
             acquireWake()
-            greetThenListen()
+            if (Prefs.standby) listen() else greetThenListen()
             main.postDelayed(drainTick, 2000)
         }
     }
@@ -322,7 +322,7 @@ class Assistant private constructor(private val app: Context) {
     // ---------- Listening ----------
 
     private fun listen() {
-        if (!active || liveActive || Prefs.liveOnly) return
+        if (!active || liveActive || (Prefs.liveOnly && !Prefs.standby)) return
         if (app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             log("Please allow the microphone first.")
             stopConversation()
@@ -498,6 +498,19 @@ class Assistant private constructor(private val app: Context) {
     }
 
     private fun heard(heardText: String) {
+        // standby: only the wake phrase matters, and it hands over to Live
+        if (Prefs.standby && !liveActive) {
+            val low = heardText.lowercase(Locale.getDefault())
+            val extra = listOf("wake up", "wakeup", "वेक अप", "वेकअप", "वेक-अप", "uth jao", "उठ जाओ", "jaag jao", "जाग जाओ")
+            if ((wakeWords() + extra).none { low.contains(it) }) {
+                relisten(200)
+                return
+            }
+            if (Prefs.autoWake && !Gestures.pocketActive()) Daily.wakeScreen(app)
+            log("You: $heardText")
+            Live.start(app, hands, 0L)
+            return
+        }
         // translator and meeting / diary modes take every sentence, no wake word needed
         if (Pro.translateLang != null) {
             awakeUntil = System.currentTimeMillis() + 60_000

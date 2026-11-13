@@ -196,6 +196,10 @@ object Prefs {
     var liveOnly: Boolean
         get() = flag("liveOnly", true)
         set(v) = setFlag("liveOnly", v)
+    /** Standby: the phone waits quietly for "wake up" / "Hey Zyro", then Live starts by itself. */
+    var standby: Boolean
+        get() = flag("standby", false)
+        set(v) = setFlag("standby", v)
     var githubToken: String
         get() = read("githubToken", "")
         set(v) = write("githubToken", v.trim())

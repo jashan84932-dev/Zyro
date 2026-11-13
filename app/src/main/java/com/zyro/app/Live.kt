@@ -131,7 +131,7 @@ object Live {
         val c = appCtx ?: return
         Assistant.get(c).setLive(false)
         Assistant.get(c).note("${Prefs.friendName}: (लाइव मोड बंद)")
-        if (Prefs.liveOnly) ListenService.stop(c)
+        if (Prefs.liveOnly && !Prefs.standby) ListenService.stop(c)
     }
 
     @Volatile private var plain = false // true = retry without the optional voice setting

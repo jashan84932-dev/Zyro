@@ -93,6 +93,10 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (Prefs.standby && !assistant.active && !Live.active &&
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            ListenService.start(this)
+        }
         assistant.onChange = { refresh() }
         refresh()
     }
