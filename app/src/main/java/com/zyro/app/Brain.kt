@@ -559,22 +559,32 @@ Current date and time: $now (India).
         }
 
         /** Like quickText but asks Gemini for strict JSON (used by the phone agent). */
+        /** HTTP code of the last failed quickJson/quickText attempt (0 = no network, -1 = no key, 429 = limit). */
+        @Volatile var lastFail = 0
+
         fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000, lite: Boolean = false): String? {
-            if (!Prefs.hasGemini) return null
-            for (model in if (lite) listOf("gemini-2.5-flash-lite", "gemini-2.5-flash") else listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) {
+            if (!Prefs.hasGemini) { lastFail = -1; return null }
+            lastFail = 0
+            val order = if (lite) listOf("gemini-2.5-flash-lite", "gemini-2.5-flash") else listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
+            // each model has its own free-limit bucket, so extra models = more headroom
+            for (model in order + listOf("gemini-flash-latest", "gemini-flash-lite-latest")) {
                 try {
                     val body = JSONObject()
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                         .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("responseMimeType", "application/json").put("temperature", 0.2).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
                     val (code, text) = Prefs.gpost(model, body.toString(), 8000, timeoutMs)
-                    if (code !in 200..299) continue
+                    if (code !in 200..299) {
+                        if (code != 404 || lastFail == 0) lastFail = code
+                        if (code == 401 || code == 403) return null
+                        continue
+                    }
                     val out = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
                         ?.optJSONObject("content")?.optJSONArray("parts")?.let { ps ->
                             val sb = StringBuilder()
                             for (k in 0 until ps.length()) sb.append(ps.optJSONObject(k)?.optString("text", "") ?: "")
                             sb.toString()
                         }
-                    if (!out.isNullOrBlank()) return out
+                    if (!out.isNullOrBlank()) { lastFail = 0; return out }
                 } catch (e: Exception) {
                 }
             }

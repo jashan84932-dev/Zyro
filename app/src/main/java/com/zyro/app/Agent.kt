@@ -365,13 +365,27 @@ Rules:
 """)
             }
             var reply: String? = null
-            for (t in 0..2) {
+            var told = false
+            for (t in 0..5) {
                 reply = Brain.quickJson(prompt, 260)
                 if (reply != null) break
-                Thread.sleep(500)
+                val f = Brain.lastFail
+                if (f == 401 || f == 403 || f == -1) break
+                if (f == 429) {
+                    if (!told) { say("Gemini की limit कुछ सेकंड के लिए भरी है, थोड़ा रुककर आगे बढ़ता हूँ।"); told = true }
+                    Thread.sleep(7000)
+                } else Thread.sleep(1200)
+                if (cancelled) return
             }
             if (reply == null) {
-                say("इंटरनेट या Gemini से जवाब नहीं मिल रहा। रुक रहा हूँ।")
+                val f = Brain.lastFail
+                say(when {
+                    f == -1 -> "Gemini key नहीं मिली। Settings में key डालो।"
+                    f == 401 || f == 403 -> "Gemini की key सही नहीं है या बंद है। Settings में नई key डालो।"
+                    f == 429 -> "Gemini की free limit पूरी हो गई। एक-दो मिनट बाद फिर बोलो।"
+                    f == 0 -> "इंटरनेट नहीं चल रहा। नेट चेक करो।"
+                    else -> "Gemini से जवाब नहीं आया (error $f)। थोड़ी देर बाद फिर बोलो।"
+                })
                 return
             }
             val j = try { JSONObject(reply.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()) } catch (e: Exception) {
