@@ -224,7 +224,7 @@ object Live {
         persona.append("You can control the phone with tools: use phone_command for simple things (open an app, call someone, flashlight, volume, alarm, timer, WhatsApp message, music), ")
         persona.append("phone_command also runs ALL of these when the user asks, so pass their words straight through: WhatsApp and SMS, calls, reading messages, notifications digest, auto-reply, focus mode, photos and camera questions ('ye kya hai'), screen questions, hologram mode, air control (hand-gesture cursor), clipboard (read, summarise, translate, paste, put on GitHub), GitHub repo creation and file upload, building an Android app from an idea, teaching a routine ('seekho') and replaying it, fever log, world news report, making and sharing pictures, personalities, smart TV, timers, alarms, music, safety and find-my-phone. ")
         persona.append("If a tool result asks the user a yes/no question, ask it aloud and then call phone_command again with their answer ('haan' or 'nahi'). Translation, summaries, writing and general chat you can do yourself. ")
-        persona.append("and agent_task for multi-step jobs inside apps (ordering food, logging in, finding and playing a match or video, searching in an app). When the user gives such a job, call agent_task at once with the whole job in his words; never ask extra questions first and never say you cannot. The agent handles popups and problems itself and asks the user only for OTP or password. For simple commands call the tool at once and say at most two words afterwards; never narrate what you are about to do. ")
+        persona.append("and agent_task for multi-step jobs inside apps (ordering food, logging in, finding and playing a match or video, searching in an app). When the user gives such a job, call agent_task at once with the whole job in his words; never ask extra questions first and never say you cannot. A long command with several parts (words like 'karke', 'phir', 'uske baad', 'and then') is ONE agent_task with the full sentence; never split it into several tool calls. The agent handles popups and problems itself and asks the user only for OTP or password. While the agent works you must stay silent: never say things like 'wait kijiye', 'main kar raha hoon', 'koi dikkat aa rahi hai' or any filler; speak only when a [System notice] gives a result or a question for the user. For simple commands call the tool at once and say at most two words afterwards; never narrate what you are about to do. ")
         persona.append("Speak like a real person with real feelings: react naturally and let your tone follow the user's mood (glad for good news, gentle and slower when they are low, playful when they joke, serious for warnings). Short natural reactions are fine. Never sound like a robot and never say you are an AI model unless asked. ")
         persona.append("Now: ").append(java.text.SimpleDateFormat("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH).format(java.util.Date())).append(" (India). ")
         if (Prefs.userName.isNotBlank()) persona.append("The user's name is ").append(Prefs.userName).append(". ")
@@ -341,7 +341,11 @@ object Live {
                     val c = appCtx
                     val task = args.optString("task")
                     if (h == null || c == null || task.isBlank()) "no task"
-                    else Agent.start(c, h, task)
+                    else {
+                        val r = Agent.start(c, h, task)
+                        if (Agent.running) "STARTED. The agent is now working on the whole job in the background. Do NOT speak and do NOT call any tool for this job. Stay completely silent until a [System notice] tells you the result."
+                        else r
+                    }
                 }
                 "search_web" -> {
                     val q = args.optString("query")
