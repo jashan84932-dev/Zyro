@@ -293,6 +293,77 @@ object Agent {
         return "opened $app search results for \"$q\" directly via link (the search is ALREADY done; do not search again, continue with the rest of the task)"
     }
 
+    // ---- learned shortcuts: a task that worked once is replayed step by step next time (the screen is checked at every step)
+
+    private fun recipeKey(job: String): String = low(job).replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+
+    private fun loadRecipe(job: String): org.json.JSONArray? = try {
+        JSONObject(Prefs.recipes).optJSONArray(recipeKey(job))
+    } catch (e: Exception) { null }
+
+    private fun saveRecipe(job: String, steps: List<JSONObject>) {
+        try {
+            val all = JSONObject(Prefs.recipes)
+            val arr = org.json.JSONArray()
+            steps.forEach { arr.put(it) }
+            all.put(recipeKey(job), arr)
+            // keep only the 30 newest
+            val keys = ArrayList<String>()
+            val it2 = all.keys()
+            while (it2.hasNext()) keys.add(it2.next())
+            if (keys.size > 30) for (k in keys.take(keys.size - 30)) all.remove(k)
+            Prefs.recipes = all.toString()
+        } catch (e: Exception) {}
+    }
+
+    private fun forgetRecipe(job: String) {
+        try {
+            val all = JSONObject(Prefs.recipes)
+            all.remove(recipeKey(job))
+            Prefs.recipes = all.toString()
+        } catch (e: Exception) {}
+    }
+
+    /** Replays saved steps. Stops at the first step whose button is not on screen. Returns how many steps ran. */
+    private fun replay(hands: Hands, recipe: org.json.JSONArray, history: MutableList<String>): Int {
+        var n = 0
+        for (i in 0 until recipe.length()) {
+            if (cancelled) break
+            val s = recipe.optJSONObject(i) ?: break
+            val act = s.optString("a")
+            val label = s.optString("l")
+            var obs = observe(hands) ?: break
+            if (BLOCKED_PKGS.any { obs.first.startsWith(it) }) break
+            val before = obs.first + obs.third.hashCode()
+            fun find(o: Triple<String, List<El>, String>): El? =
+                o.second.firstOrNull { it.clickable && low(it.label).trim() == low(label).trim() }
+            when (act) {
+                "tap" -> {
+                    var el = find(obs)
+                    if (el == null) { Thread.sleep(1300); obs = observe(hands) ?: break; el = find(obs) }
+                    if (el == null || el.label == "(password field)" || risky(el.label)) break
+                    history.add("replayed tap \"${label.take(30)}\" -> " + tapEl(hands, el))
+                }
+                "type", "type_enter" -> {
+                    val el = if (label.isNotBlank()) obs.second.firstOrNull { it.editable && low(it.label).trim() == low(label).trim() } else null
+                    if (el != null) { tapEl(hands, el); Thread.sleep(350) }
+                    val r = hands.typeText(s.optString("t"))
+                    if (act == "type_enter") { Thread.sleep(250); history.add("replayed typed \"${s.optString("t")}\" + enter -> $r; " + pressEnter(hands)) }
+                    else history.add("replayed typed \"${s.optString("t")}\" -> $r")
+                }
+                "open_app" -> history.add("replayed open_app -> " + openSmart(hands, s.optString("t")))
+                "scroll_down" -> history.add("replayed scroll down -> " + hands.scroll(true))
+                "scroll_up" -> history.add("replayed scroll up -> " + hands.scroll(false))
+                "back" -> history.add("replayed back -> " + hands.press("back"))
+                "enter" -> history.add("replayed enter -> " + pressEnter(hands))
+                else -> break
+            }
+            n++
+            settle(hands, before)
+        }
+        return n
+    }
+
     private val APP_NAMES = mapOf(
         "hotstar" to listOf("JioHotstar", "Hotstar", "Disney+ Hotstar"),
         "jiohotstar" to listOf("JioHotstar", "Hotstar", "Disney+ Hotstar"),
@@ -369,6 +440,9 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         var nullObs = 0
         var logged = 0
         var calm = 0
+        val rec = ArrayList<JSONObject>()
+        var recordable = true
+        var stuckSeen = false
         var lastAi = 0L
         val reflexUsed = HashMap<String, Int>()
         val loginJob = low(job).let { it.contains("login") || it.contains("log in") || it.contains("sign in") || it.contains("लॉगिन") }
@@ -392,6 +466,14 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         if (first != null) {
             val r = openSmart(hands, first)
             if (r.startsWith("Opened")) { mainApp = first; history.add("open_app $first -> $r"); Thread.sleep(1200) }
+        }
+        val saved = loadRecipe(job)
+        if (saved != null && saved.length() > 0) {
+            val n = replay(hands, saved, history)
+            Assistant.get(ctx).note("⚙ replayed $n of ${saved.length()} learned steps")
+            if (n > 0) progress = "the first $n steps were already done by a learned shortcut; check the screen and continue"
+            if (n < saved.length()) forgetRecipe(job)
+            recordable = false
         }
         if (words >= 8) try { planThread?.join(4000) } catch (e: Exception) {}
         while (step < 90 && !cancelled) {
@@ -423,6 +505,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
             same = if (sig == lastSig) same + 1 else 0
             lastSig = sig
             calm = if (same == 0) calm + 1 else 0
+            if (same >= 3) stuckSeen = true
             // automatic recovery when nothing changes
             if (same >= 4 && same % 4 == 0) {
                 history.add("auto: screen stuck, pressed back -> " + hands.press("back"))
@@ -522,6 +605,7 @@ Rules:
                             continue
                         }
                     }
+                    if (recordable && !stuckSeen && failPush == 0 && doneRejects == 0 && rec.size in 1..20) saveRecipe(job, rec)
                     say(sayText.ifBlank { "काम हो गया।" })
                     return
                 }
@@ -540,6 +624,7 @@ Rules:
                     }
                 }
                 "ask_user" -> {
+                    recordable = false
                     val t0 = System.currentTimeMillis()
                     val r = askUser(sayText.ifBlank { "मुझे थोड़ी जानकारी चाहिए।" })
                     started += System.currentTimeMillis() - t0
@@ -550,6 +635,7 @@ Rules:
                     history.add("asked user, user said: $r")
                 }
                 "wait_user" -> {
+                    recordable = false
                     val t0 = System.currentTimeMillis()
                     val ok = waitForUser(hands, sayText.ifBlank { "यह आप खुद डाल दो, मैं यहीं इंतज़ार करता हूँ।" }, false)
                     started += System.currentTimeMillis() - t0
@@ -581,13 +667,14 @@ Rules:
                         }
                         val r = tapEl(hands, el)
                         history.add("tapped $id \"${el.label.take(40)}\" -> $r")
+                        if (el.label.isNotBlank()) rec.add(JSONObject().put("a", "tap").put("l", el.label)) else recordable = false
                     }
                 }
                 "tap_xy" -> {
                     val x = j.optInt("x", -1)
                     val y = j.optInt("y", -1)
                     if (x < 0 || y < 0) history.add("tap_xy needs x and y")
-                    else history.add("tapped position $x,$y -> " + hands.tap(x, y))
+                    else { history.add("tapped position $x,$y -> " + hands.tap(x, y)); recordable = false }
                 }
                 "type" -> {
                     if (el != null && el.label == "(password field)") {
@@ -605,23 +692,25 @@ Rules:
                     }
                     val r = hands.typeText(txt)
                     history.add("typed \"$txt\" -> $r")
+                    rec.add(JSONObject().put("a", "type").put("t", txt).put("l", el?.label ?: ""))
                 }
                 "type_enter" -> {
                     if (el != null) { tapEl(hands, el); Thread.sleep(350) }
                     val r1 = hands.typeText(txt)
                     Thread.sleep(250)
                     history.add("typed \"$txt\" -> $r1; enter -> " + pressEnter(hands))
+                    rec.add(JSONObject().put("a", "type_enter").put("t", txt).put("l", el?.label ?: ""))
                 }
-                "enter" -> history.add("enter -> " + pressEnter(hands))
-                "scroll_down" -> history.add("scroll down -> " + hands.scroll(true))
-                "scroll_up" -> history.add("scroll up -> " + hands.scroll(false))
-                "back" -> history.add("back -> " + hands.press("back"))
+                "enter" -> { history.add("enter -> " + pressEnter(hands)); rec.add(JSONObject().put("a", "enter")) }
+                "scroll_down" -> { history.add("scroll down -> " + hands.scroll(true)); rec.add(JSONObject().put("a", "scroll_down")) }
+                "scroll_up" -> { history.add("scroll up -> " + hands.scroll(false)); rec.add(JSONObject().put("a", "scroll_up")) }
+                "back" -> { history.add("back -> " + hands.press("back")); rec.add(JSONObject().put("a", "back")) }
                 "home" -> history.add("home -> " + hands.press("home"))
                 "open_app" -> {
                     val nm = j.optString("app", txt)
                     val r = openSmart(hands, nm)
                     history.add("open_app $nm -> $r")
-                    if (r.startsWith("Opened")) { if (mainApp.isBlank()) mainApp = nm; notInstalled = 0 }
+                    if (r.startsWith("Opened")) { if (mainApp.isBlank()) mainApp = nm; notInstalled = 0; rec.add(JSONObject().put("a", "open_app").put("t", nm)) }
                     else {
                         notInstalled++
                         if (notInstalled >= 2) {

@@ -268,6 +268,10 @@ object Prefs {
     var liveOnly: Boolean
         get() = flag("liveOnly", true)
         set(v) = setFlag("liveOnly", v)
+    /** Steps that worked for a task, so the same task runs faster next time (JSON object: task -> steps). */
+    var recipes: String
+        get() = read("recipes", "{}")
+        set(v) = write("recipes", v)
     var githubToken: String
         get() = read("githubToken", "")
         set(v) = write("githubToken", v.trim())
