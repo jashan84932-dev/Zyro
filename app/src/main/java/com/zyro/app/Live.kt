@@ -128,6 +128,7 @@ object Live {
         try { ws?.close(1000, "bye") } catch (e: Exception) {}
         ws = null
         releaseAudio()
+        Thread { try { Memory.learn(true) } catch (e: Exception) {} }.start()
         val c = appCtx ?: return
         Assistant.get(c).setLive(false)
         Assistant.get(c).note("${Prefs.friendName}: (लाइव मोड बंद)")
@@ -235,6 +236,19 @@ object Live {
                 for (i in maxOf(0, fa.length() - 25) until fa.length()) persona.append(fa.getJSONObject(i).optString("t")).append("; ")
             }
         } catch (e: Exception) {}
+        try {
+            val seen = HashSet<String>()
+            val mf = Memory.facts().takeLast(30).filter { seen.add(it.lowercase()) }
+            if (mf.isNotEmpty()) {
+                persona.append("What you have learned about the user over time: ")
+                mf.forEach { persona.append(it.take(160)).append("; ") }
+            }
+            val hist = Memory.history().takeLast(6)
+            if (hist.isNotEmpty()) {
+                persona.append("Last things you two talked about (continue naturally, do not recite): ")
+                hist.forEach { (r, t) -> persona.append(if (r == "assistant") "You: " else "User: ").append(t.take(140)).append(" | ") }
+            }
+        } catch (e: Exception) {}
         persona.append("For facts that change (news, prices, scores, weather, people, products) call search_web instead of guessing. To see what is on the phone screen call read_screen. When the user says remember something, call remember. ")
         Smart.persona?.let { persona.append("Speaking style: ").append(it).append(" ") }
         persona.append("Never claim you did something unless the tool result says so. When the user says goodbye or wants to stop, call end_live.")
@@ -294,6 +308,10 @@ object Live {
                     val m = outText.toString().trim()
                     if (u.isNotEmpty()) Assistant.get(c).note("You: $u")
                     if (m.isNotEmpty()) Assistant.get(c).note("${Prefs.friendName}: $m")
+                    if (u.length > 3 && m.isNotEmpty()) {
+                        // Live learns too: keep the chat and pull lasting facts out of it, off the audio thread
+                        Thread { try { Memory.addTurn(u, m); Memory.learn() } catch (e: Exception) {} }.start()
+                    }
                 }
                 inText.setLength(0)
                 outText.setLength(0)
@@ -360,6 +378,7 @@ object Live {
                         val keep = JSONArray()
                         for (i in maxOf(0, arr.length() - 100) until arr.length()) keep.put(arr.get(i))
                         Prefs.userFacts = keep.toString()
+                        try { Memory.addFact(f) } catch (e: Exception) {}
                         "saved"
                     }
                 }

@@ -20,8 +20,8 @@ object Memory {
     private var turns = 0
 
     /** Every few turns, quietly pull lasting facts about the user out of the recent chat. */
-    fun learn() {
-        if (++turns % 4 != 0 || !Prefs.hasGemini) return
+    fun learn(force: Boolean = false) {
+        if ((!force && ++turns % 4 != 0) || !Prefs.hasGemini) return
         val h = history().takeLast(8)
         if (h.isEmpty()) return
         val chat = h.joinToString("\n") { (r, t) -> (if (r == "assistant") "Zyro: " else "User: ") + t.take(300) }
@@ -38,6 +38,15 @@ object Memory {
         } catch (e: Exception) {
             // ignore a bad answer
         }
+    }
+
+    /** Adds one finished exchange to the saved chat (used by Live so the next session continues the thread). */
+    fun addTurn(user: String, assistant: String) {
+        if (user.isBlank() && assistant.isBlank()) return
+        val h = history()
+        h.add("user" to user.ifBlank { "(…)" }.take(400))
+        h.add("assistant" to assistant.ifBlank { "(…)" }.take(400))
+        saveHistory(h)
     }
 
     fun addFact(fact: String) {
