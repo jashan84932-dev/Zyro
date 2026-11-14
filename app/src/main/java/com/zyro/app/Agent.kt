@@ -227,6 +227,9 @@ object Agent {
         return if (cancelled || r.isNullOrBlank()) null else r
     }
 
+    private val REFLEX_ALWAYS = setOf("while using the app", "only this time", "no thanks", "no, thanks", "skip ad", "skip ads", "got it", "dismiss", "not now", "maybe later", "अभी नहीं")
+    private val REFLEX_SOFT = setOf("skip", "later", "close", "बाद में", "छोड़ें")
+
     @Volatile private var planText = ""
     @Volatile private var progress = ""
     private var planThread: Thread? = null
@@ -306,6 +309,11 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         var notInstalled = 0
         var nullObs = 0
         var logged = 0
+        var calm = 0
+        var lastAi = 0L
+        val reflexUsed = HashMap<String, Int>()
+        val loginJob = low(job).let { it.contains("login") || it.contains("log in") || it.contains("sign in") || it.contains("लॉगिन") }
+        val t00 = System.currentTimeMillis()
         planText = ""
         progress = ""
         val words = job.trim().split(Regex("\\s+")).size
@@ -353,6 +361,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
             val sig = pkg + text.hashCode()
             same = if (sig == lastSig) same + 1 else 0
             lastSig = sig
+            calm = if (same == 0) calm + 1 else 0
             // automatic recovery when nothing changes
             if (same >= 4 && same % 4 == 0) {
                 history.add("auto: screen stuck, pressed back -> " + hands.press("back"))
@@ -362,6 +371,22 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 history.add("auto: stuck for long, reopened $mainApp -> " + openSmart(hands, mainApp))
                 same = 0
                 Thread.sleep(1500)
+            }
+            // reflex: obvious popups are closed instantly, no AI call needed
+            val rf = els.firstOrNull { e ->
+                val l = low(e.label).trim()
+                e.clickable && l.isNotEmpty() && (l in REFLEX_ALWAYS || (!loginJob && l in REFLEX_SOFT))
+            }
+            if (rf != null) {
+                val key = pkg + rf.label
+                val n = (reflexUsed[key] ?: 0) + 1
+                reflexUsed[key] = n
+                if (n <= 2) {
+                    history.add("auto-closed popup \"${rf.label.take(30)}\" -> " + tapEl(hands, rf))
+                    while (logged < history.size) { Assistant.get(ctx).note("⚙ " + history[logged]); logged++ }
+                    settle(hands, sig)
+                    continue
+                }
             }
             val prompt = buildString {
                 append("You are an expert, persistent agent that operates an Android phone for the user. User's task: \"").append(job).append("\"\n")
@@ -389,8 +414,9 @@ Rules:
             }
             var reply: String? = null
             var told = false
+            val tAi = System.currentTimeMillis()
             for (t in 0..5) {
-                reply = Brain.quickJson(prompt, 260)
+                reply = Brain.quickJson(prompt, 260, 25000, calm >= 2 && t == 0)
                 if (reply != null) break
                 val f = Brain.lastFail
                 if (f == 401 || f == 403 || f == -1) break
@@ -411,8 +437,10 @@ Rules:
                 })
                 return
             }
+            lastAi = System.currentTimeMillis() - tAi
             val j = try { JSONObject(reply.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()) } catch (e: Exception) {
                 history.add("(bad reply, retrying)")
+                calm = 0
                 continue
             }
             j.optString("progress", "").let { if (it.isNotBlank()) progress = it.take(300) }
@@ -546,6 +574,7 @@ Rules:
                 else -> history.add("unknown action '$action'")
             }
             while (logged < history.size) { Assistant.get(ctx).note("⚙ " + history[logged]); logged++ }
+            Assistant.get(ctx).note("⏱ step $step: AI $lastAi ms, total ${(System.currentTimeMillis() - t00) / 1000} s${if (calm >= 2) " (fast model)" else ""}")
             settle(hands, sig)
         }
         if (cancelled) say("ठीक है, रुक गया।") else say("काफ़ी कोशिश की पर पूरा नहीं हुआ। बाकी आप देख लो।")
