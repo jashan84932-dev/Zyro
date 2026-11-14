@@ -144,7 +144,8 @@ object Agent {
         answer = null
         userReply = null
         task = job
-        Thread { try { loop(ctx, hands, job) } catch (e: Exception) { say("काम के बीच में दिक्कत आ गई: ${e.message}") } finally { running = false; awaiting = null } }.start()
+        keepAwake(true)
+        Thread { try { loop(ctx, hands, job) } catch (e: Exception) { say("काम के बीच में दिक्कत आ गई: ${e.message}") } finally { running = false; awaiting = null; keepAwake(false) } }.start()
         return "ठीक है, शुरू करता हूँ। बीच में रोकना हो तो बोलो रुको।"
     }
 
@@ -233,6 +234,64 @@ object Agent {
     @Volatile private var planText = ""
     @Volatile private var progress = ""
     private var planThread: Thread? = null
+
+    private var wl: android.os.PowerManager.WakeLock? = null
+
+    /** Keeps the screen on while the agent works, so it never stalls on a dimmed or locked screen. */
+    private fun keepAwake(on: Boolean) {
+        val c = appCtx ?: return
+        try {
+            wl?.let { if (it.isHeld) it.release() }
+            wl = null
+            if (on) {
+                val pm = c.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                @Suppress("DEPRECATION")
+                val w = pm.newWakeLock(android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP, "zyro:agent")
+                w.acquire(16 * 60_000L)
+                wl = w
+            }
+        } catch (e: Exception) {}
+    }
+
+    private val DEEP_APPS = listOf("youtube", "maps", "spotify", "amazon", "flipkart", "google", "यूट्यूब", "मैप", "स्पोटिफाई", "अमेज़न", "अमेजन", "फ्लिपकार्ट", "गूगल")
+
+    /**
+     * Opens a search result page straight from a link (YouTube, Maps, Spotify, Amazon, Flipkart, Google),
+     * skipping the open-app / find-box / type / enter steps. Returns a note for the agent, or null.
+     */
+    private fun deepOpen(ctx: Context, job: String): String? {
+        val jl = low(job)
+        if (DEEP_APPS.none { jl.contains(it) }) return null
+        val r = Brain.quickJson(
+            "User task for a phone agent: \"$job\"\nIf the task starts by searching or playing something in YouTube, Google Maps, Spotify, Amazon, Flipkart or Google, " +
+                "reply {\"app\":\"youtube|maps|spotify|amazon|flipkart|google\",\"query\":\"only the search words, in the language a user would type\"}. " +
+                "Otherwise reply {\"app\":\"none\",\"query\":\"\"}. JSON only.",
+            90, 8000, true
+        ) ?: return null
+        val j = try { JSONObject(r.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()) } catch (e: Exception) { return null }
+        val app = low(j.optString("app"))
+        val q = j.optString("query").trim()
+        if (q.isEmpty() || app == "none") return null
+        val e = java.net.URLEncoder.encode(q, "UTF-8")
+        val (url, pkg) = when (app) {
+            "youtube" -> Pair("https://www.youtube.com/results?search_query=$e", "com.google.android.youtube")
+            "maps" -> Pair("https://www.google.com/maps/search/?api=1&query=$e", "com.google.android.apps.maps")
+            "spotify" -> Pair("spotify:search:$e", "com.spotify.music")
+            "amazon" -> Pair("https://www.amazon.in/s?k=$e", "in.amazon.mShop.android.shopping")
+            "flipkart" -> Pair("https://www.flipkart.com/search?q=$e", "com.flipkart.android")
+            "google" -> Pair("https://www.google.com/search?q=$e", "")
+            else -> return null
+        }
+        fun go(withPkg: Boolean): Boolean = try {
+            val i = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (withPkg && pkg.isNotEmpty()) i.setPackage(pkg)
+            ctx.startActivity(i)
+            true
+        } catch (ex: Exception) { false }
+        if (!(go(true) || go(false))) return null
+        return "opened $app search results for \"$q\" directly via link (the search is ALREADY done; do not search again, continue with the rest of the task)"
+    }
 
     private val APP_NAMES = mapOf(
         "hotstar" to listOf("JioHotstar", "Hotstar", "Disney+ Hotstar"),
@@ -327,7 +386,9 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         planThread?.start()
         // open the named app right away, no AI call needed for that
         val jl = low(job)
-        val first = APPS.firstOrNull { it.all { c -> c.code < 128 } && jl.contains(it) }
+        val deep = deepOpen(ctx, job)
+        if (deep != null) { history.add(deep); Thread.sleep(1800) }
+        val first = if (deep != null) null else APPS.firstOrNull { it.all { c -> c.code < 128 } && jl.contains(it) }
         if (first != null) {
             val r = openSmart(hands, first)
             if (r.startsWith("Opened")) { mainApp = first; history.add("open_app $first -> $r"); Thread.sleep(1200) }
