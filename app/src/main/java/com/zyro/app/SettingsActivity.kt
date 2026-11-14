@@ -172,6 +172,12 @@ class SettingsActivity : Activity() {
 
         box.addView(label("SMART TV (Android TV / Aiwa) - optional", 15f))
         box.addView(label("Turn the TV on and connect it to this phone's hotspot (or the same Wi-Fi)."))
+        val tvIpField = field("TV IP address (only if the TV is not found), e.g. 192.168.1.25", value = Prefs.tvIp)
+        box.addView(tvIpField)
+        box.addView(button("Save TV IP") {
+            Prefs.tvIp = tvIpField.text.toString().trim()
+            Toast.makeText(this, if (Prefs.tvIp.isBlank()) "TV IP cleared (auto search)" else "TV IP saved", Toast.LENGTH_SHORT).show()
+        })
         box.addView(button("5. Pair my TV - show code on TV") {
             Toast.makeText(this, "Looking for the TV...", Toast.LENGTH_SHORT).show()
             Thread {
