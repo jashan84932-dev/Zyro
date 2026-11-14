@@ -105,6 +105,7 @@ object Live {
         endAfterTurn = false
         modelTry = 0
         plain = false
+        noCompress = false
         val my = ++gen
         startedAt = System.currentTimeMillis()
         lastActivity = startedAt
@@ -131,10 +132,25 @@ object Live {
         Thread { try { Memory.learn(true) } catch (e: Exception) {} }.start()
         val c = appCtx ?: return
         Assistant.get(c).setLive(false)
-        Assistant.get(c).note("${Prefs.friendName}: (लाइव मोड बंद)")
-        if (Prefs.liveOnly) ListenService.stop(c)
+        if (!restarting) Assistant.get(c).note("${Prefs.friendName}: (लाइव मोड बंद)")
+        if (Prefs.liveOnly && !restarting) ListenService.stop(c)
     }
 
+    /** Starts a fresh live session without any break or announcement (the memory carries the thread over). */
+    private fun softRestart() {
+        val c = appCtx ?: return
+        val h = hands ?: return
+        if (!active || restarting) return
+        restarting = true
+        stop()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            restarting = false
+            start(c, h, 0L)
+        }, 800)
+    }
+
+    @Volatile private var noCompress = false // true = retry without the long-session setting
+    @Volatile private var restarting = false
     @Volatile private var plain = false // true = retry without the optional voice setting
 
     private fun models(): List<String> = listOf(Prefs.liveModel, "gemini-3.1-flash-live-preview").distinct()
@@ -169,7 +185,10 @@ object Live {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (my != gen || !active) return
-                if (!ready && !plain) {
+                if (!ready && !noCompress) {
+                    noCompress = true
+                    openSocket(my)
+                } else if (!ready && !plain) {
                     plain = true
                     openSocket(my)
                 } else if (!ready && modelTry + 1 < models().size) {
@@ -184,7 +203,10 @@ object Live {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (my != gen || !active) return
-                if (!ready && !plain) {
+                if (!ready && !noCompress) {
+                    noCompress = true
+                    openSocket(my)
+                } else if (!ready && !plain) {
                     plain = true
                     openSocket(my)
                 } else if (!ready && modelTry + 1 < models().size) {
@@ -267,7 +289,11 @@ object Live {
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", persona.toString()))))
             .put("tools", JSONArray().put(JSONObject().put("functionDeclarations", fn)))
             .put("inputAudioTranscription", JSONObject())
-            .put("outputAudioTranscription", JSONObject()))
+            .put("outputAudioTranscription", JSONObject())
+            .also { s ->
+                // long chats never hit the session length limit: old turns are folded away automatically
+                if (!noCompress) s.put("contextWindowCompression", JSONObject().put("slidingWindow", JSONObject()))
+            })
     }
 
     private fun decl(name: String, desc: String, param: String, pdesc: String): JSONObject =
@@ -329,11 +355,7 @@ object Live {
                 Thread { runTool(my, socket, call) }.start()
             }
         }
-        if (j.has("goAway")) {
-            val c = appCtx
-            stop()
-            if (c != null) Assistant.get(c).announce("लाइव सेशन का समय पूरा हो गया। फिर से बोलो लाइव मोड।")
-        }
+        if (j.has("goAway")) softRestart()
     }
 
     private fun runTool(my: Int, socket: WebSocket, call: JSONObject) {
@@ -467,7 +489,13 @@ object Live {
                 while (active && my == gen) {
                     Thread.sleep(5000)
                     val now = System.currentTimeMillis()
-                    if (now - startedAt > 14 * 60_000L || now - lastActivity > 3 * 60_000L) {
+                    val age = now - startedAt
+                    val quiet = now - lastActivity > 4000 && now - lastPlay > 2500
+                    if (now - lastActivity < 3 * 60_000L && ((age > 12 * 60_000L && quiet) || age > 14 * 60_000L)) {
+                        softRestart()
+                        break
+                    }
+                    if (now - lastActivity > 3 * 60_000L) {
                         val cc = appCtx
                         stop()
                         cc?.let { Assistant.get(it).announce("लाइव मोड बंद कर दिया।") }
