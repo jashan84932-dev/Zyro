@@ -11,6 +11,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.RectF
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
@@ -44,6 +45,10 @@ import kotlin.math.hypot
  *   open it again        : tap there  (close, hold about 1.5 s, open = long press)
  *   close, move, open    : drag / swipe from there to here
  *   only the index finger: scroll - move the finger up or down
+ *   thumb touches the index fingertip, like touching a screen:
+ *     quick touch = tap, touch + slide the hand = swipe / scroll (reels), touch and hold = long press
+ *   two fingers (V)      : hold briefly = Back, hold longer = Home
+ *   the cursor is pulled gently toward the button under it, and that button is outlined
  * Needs: camera, "display over other apps", Zyro's accessibility service, and the hand model file
  * (the GitHub build downloads it into assets).
  */
@@ -102,8 +107,8 @@ object AirControl {
         }
     }
 
-    private val fx = OneEuro(1.4, 14.0)
-    private val fy = OneEuro(1.4, 14.0)
+    private val fx = OneEuro(1.0, 16.0)
+    private val fy = OneEuro(1.0, 16.0)
     private val fScroll = OneEuro(2.0, 10.0)
 
     // ---------------------------------------------------------------- state
@@ -111,6 +116,8 @@ object AirControl {
     private const val OPEN = 1
     private const val FIST = 2
     private const val POINT = 3
+    private const val VEE = 4
+    private const val PINCH = 5
 
     private var stable = 0           // debounced pose
     private var candidate = 0
@@ -131,6 +138,58 @@ object AirControl {
 
     private var scrollRef = -1.0
     private var lastTapAt = 0L
+    private var vSince = 0L
+    private var dragStartAt = 0L
+
+    // buttons on screen, refreshed in the background, used to pull the cursor toward the right button
+    @Volatile private var targets: List<Rect> = emptyList()
+    private val scanner = Executors.newSingleThreadExecutor()
+    private val scanBusy = AtomicBoolean(false)
+    private var lastScan = 0L
+    private var prevCurX = -1f
+    private var prevCurY = -1f
+
+    private fun scanTargets(now: Long) {
+        if (now - lastScan < 450 || !scanBusy.compareAndSet(false, true)) return
+        lastScan = now
+        scanner.execute {
+            try {
+                val root = handsRef?.service?.rootInActiveWindow
+                val out = ArrayList<Rect>()
+                if (root != null) {
+                    val limit = screenW.toLong() * screenH * 0.25
+                    fun walk(n: AccessibilityNodeInfo?, depth: Int) {
+                        if (n == null || depth > 30 || out.size >= 140) return
+                        if (n.isClickable && n.isVisibleToUser) {
+                            val r = Rect()
+                            n.getBoundsInScreen(r)
+                            if (r.width() > 0 && r.height() > 0 && r.width().toLong() * r.height() < limit) out.add(r)
+                        }
+                        for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)
+                    }
+                    walk(root, 0)
+                }
+                targets = out
+            } catch (e: Exception) {
+            } finally {
+                scanBusy.set(false)
+            }
+        }
+    }
+
+    /** The button the cursor is on (smallest one containing it) or the nearest one within about 70 px. */
+    private fun nearestTarget(x: Float, y: Float): Rect? {
+        var best: Rect? = null
+        var bestScore = Float.MAX_VALUE
+        for (r in targets) {
+            val inside = r.contains(x.toInt(), y.toInt())
+            val dd = d(x, y, r.centerX().toFloat(), r.centerY().toFloat())
+            if (!inside && dd > 70f) continue
+            val score = if (inside) r.width().toFloat() * r.height() else 1e9f + dd
+            if (score < bestScore) { bestScore = score; best = r }
+        }
+        return best
+    }
 
     // ---------------------------------------------------------------- the cursor view (draws at display speed)
 
@@ -147,6 +206,9 @@ object AirControl {
         var rippleX = 0f
         var rippleY = 0f
         var scrollDir = 0
+        var hl: RectF? = null
+        var vProg = 0f
+        private val rf = RectF()
         private var x = -1f
         private var y = -1f
         private var last = 0L
@@ -176,6 +238,17 @@ object AirControl {
                 p.strokeWidth = 3f * d
                 p.color = Color.argb(160, 47, 160, 255)
                 c.drawLine(fromX, fromY, x, y, p)
+            }
+            // outline of the button that a tap would hit
+            val h = hl
+            if (h != null && mode == 1) {
+                p.style = Paint.Style.FILL
+                p.color = Color.argb(34, 47, 160, 255)
+                c.drawRoundRect(h, 10f * d, 10f * d, p)
+                p.style = Paint.Style.STROKE
+                p.strokeWidth = 2.4f * d
+                p.color = Color.argb(210, 150, 215, 255)
+                c.drawRoundRect(h, 10f * d, 10f * d, p)
             }
             // soft glow
             p.style = Paint.Style.FILL
@@ -207,6 +280,19 @@ object AirControl {
                         c.drawLine(x - a, y + off + s * a * 0.1f - s * 0f, x, y + off - s * a * 0.9f, p)
                         c.drawLine(x, y + off - s * a * 0.9f, x + a, y + off + s * a * 0.1f, p)
                     }
+                }
+                4 -> {
+                    // back / home: a "<" and a ring that fills (full ring = Home)
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = 3.6f * d
+                    p.strokeCap = Paint.Cap.ROUND
+                    p.color = ice
+                    val a = 9f * d
+                    c.drawLine(x + a * 0.5f, y - a, x - a * 0.5f, y, p)
+                    c.drawLine(x - a * 0.5f, y, x + a * 0.5f, y + a, p)
+                    rf.set(x - r * 1.3f, y - r * 1.3f, x + r * 1.3f, y + r * 1.3f)
+                    p.color = Color.argb(230, 150, 215, 255)
+                    c.drawArc(rf, -90f, 360f * vProg, false, p)
                 }
                 else -> {
                     p.style = Paint.Style.FILL
@@ -285,7 +371,7 @@ object AirControl {
                 cleanup()
             }
         }.start()
-        return "हाथ के इशारे चालू। खुला हाथ दिखाओ, कर्सर हाथ के साथ चलेगा। हाथ बंद करके छोड़ो तो टैप होगा। सिर्फ़ पहली उँगली से स्क्रॉल होगा। बंद करने के लिए बोलो, हाथ के इशारे बंद।"
+        return "हाथ के इशारे चालू। खुला हाथ दिखाओ, कर्सर हाथ के साथ चलेगा। अँगूठे को पहली उँगली की नोक से छुओ और छोड़ो तो टैप, छूकर हाथ ऊपर-नीचे घुमाओ तो स्वाइप या रील स्क्रॉल। (हाथ बंद करके छोड़ना भी चलता है।) सिर्फ़ पहली उँगली से स्क्रॉल होगा। दो उँगलियाँ (V) थोड़ी देर रखो तो पीछे, ज़्यादा देर रखो तो होम। बंद करने के लिए बोलो, हाथ के इशारे बंद।"
     }
 
     fun stop(): String {
@@ -304,6 +390,9 @@ object AirControl {
         trail.clear()
         dragging = false
         scrollRef = -1.0
+        targets = emptyList()
+        prevCurX = -1f
+        prevCurY = -1f
         fx.reset(); fy.reset(); fScroll.reset()
         inFlight.set(false)
         lastHandAt = SystemClock.uptimeMillis()
@@ -533,14 +622,20 @@ object AirControl {
         val px = (x[0] + x[5] + x[9] + x[13] + x[17]) / 5f
         val py = (y[0] + y[5] + y[9] + y[13] + y[17]) / 5f
         val n = (if (idx) 1 else 0) + (if (mid) 1 else 0) + (if (ring) 1 else 0) + (if (pinky) 1 else 0)
+        val palmLen = d(x[0], y[0], x[9], y[9]).coerceAtLeast(0.01f)
+        val pd = d(x[4], y[4], x[8], y[8]) / palmLen
+        val others = (if (mid) 1 else 0) + (if (ring) 1 else 0) + (if (pinky) 1 else 0)
+        val pinchNow = others >= 2 && (if (stable == PINCH) pd < 0.55f else pd < 0.34f)
         val raw = when {
+            pinchNow -> PINCH
             n >= 3 -> OPEN
+            idx && mid && !ring && !pinky -> VEE
             idx && !mid && !ring && !pinky -> POINT
             n == 0 -> FIST
             else -> 0
         }
         // a pose must hold for two frames; in-between shapes do not change anything
-        if (stable != FIST) { lastPx = px; lastPy = py }
+        if (stable != FIST && stable != PINCH) { lastPx = px; lastPy = py }
         if (raw != 0) {
             if (raw == candidate) candidateCount++ else { candidate = raw; candidateCount = 1 }
             if (candidateCount >= 2 && candidate != stable) changePose(candidate, now)
@@ -551,17 +646,31 @@ object AirControl {
                 // the middle part of the camera view covers the whole screen, so small hand moves are enough
                 val tx = ((((px - 0.5f) * gain / 0.68f) + 0.5f).coerceIn(0f, 1f)) * screenW
                 val ty = ((((py - 0.45f) * gain / 0.62f) + 0.5f).coerceIn(0f, 1f)) * screenH
-                curX = fx.filter(tx.toDouble(), now).toFloat()
-                curY = fy.filter(ty.toDouble(), now).toFloat()
+                var cx = fx.filter(tx.toDouble(), now).toFloat()
+                var cy = fy.filter(ty.toDouble(), now).toFloat()
+                scanTargets(now)
+                val tg = nearestTarget(cx, cy)
+                if (tg != null && prevCurX >= 0f && d(cx, cy, prevCurX, prevCurY) < 16f) {
+                    // moving slowly toward a button: ease the cursor onto its centre
+                    cx += (tg.centerX() - cx) * 0.4f
+                    cy += (tg.centerY() - cy) * 0.4f
+                }
+                prevCurX = cx
+                prevCurY = cy
+                overlay?.hl = tg?.let { RectF(it) }
+                curX = cx
+                curY = cy
                 trail.addLast(floatArrayOf(now.toFloat(), curX, curY))
                 while (trail.size > 1 && now - trail.first()[0] > 600) trail.removeFirst()
                 show(curX, curY, 1)
             }
-            FIST -> {
-                if (!dragging && d(px, py, fistPalmX, fistPalmY) > 0.07f) dragging = true
+            FIST, PINCH -> {
+                val pz = stable == PINCH
+                if (!dragging && d(px, py, fistPalmX, fistPalmY) > (if (pz) 0.04f else 0.07f)) { dragging = true; dragStartAt = now }
                 if (dragging) {
-                    dragX = (anchorX + (px - fistPalmX) * gain / 0.68f * screenW).coerceIn(0f, screenW.toFloat())
-                    dragY = (anchorY + (py - fistPalmY) * gain / 0.62f * screenH).coerceIn(0f, screenH.toFloat())
+                    val pg = if (pz) 1.5f else 1f // a small thumb-style flick travels a long way
+                    dragX = (anchorX + (px - fistPalmX) * gain * pg / 0.68f * screenW).coerceIn(0f, screenW.toFloat())
+                    dragY = (anchorY + (py - fistPalmY) * gain * pg / 0.62f * screenH).coerceIn(0f, screenH.toFloat())
                     overlay?.fromX = anchorX
                     overlay?.fromY = anchorY
                     overlay?.dragLine = true
@@ -571,6 +680,11 @@ object AirControl {
                 }
             }
             POINT -> scroll(y[8], now)
+            VEE -> {
+                overlay?.hl = null
+                overlay?.vProg = ((now - vSince) / 1400f).coerceIn(0f, 1f)
+                show(if (curX < 0) screenW / 2f else curX, if (curY < 0) screenH / 2f else curY, 4)
+            }
             else -> show(if (curX < 0) screenW / 2f else curX, if (curY < 0) screenH / 2f else curY, 1)
         }
     }
@@ -578,8 +692,12 @@ object AirControl {
     private fun changePose(next: Int, now: Long) {
         val prev = stable
         stable = next
+        if ((prev == FIST && next == PINCH) || (prev == PINCH && next == FIST)) { stable = next; return }
         if (prev == POINT) { scrollRef = -1.0; overlay?.scrollDir = 0 }
-        if (next == FIST) {
+        if (next != OPEN) overlay?.hl = null
+        if (next == VEE) vSince = now
+        if (prev == VEE && next != VEE) fireV(now)
+        if (next == FIST || next == PINCH) {
             // the click goes where the cursor was just BEFORE the hand started to close
             val cut = now - 220
             var a = trail.lastOrNull()
@@ -591,7 +709,7 @@ object AirControl {
             fistPalmX = lastPalmX()
             fistPalmY = lastPalmY()
         }
-        if (prev == FIST && next != FIST) release(now)
+        if ((prev == FIST || prev == PINCH) && next != FIST && next != PINCH) release(now, prev == PINCH)
         if (next == OPEN) {
             // restart smoothing from the current spot so the cursor does not jump
             fx.reset(); fy.reset()
@@ -599,12 +717,22 @@ object AirControl {
         }
     }
 
+    /** Two fingers held: a short hold = Back, a long hold = Home. */
+    private fun fireV(now: Long) {
+        val hands = handsRef ?: return
+        overlay?.vProg = 0f
+        val held = now - vSince
+        if (held < 350) return
+        overlay?.let { it.rippleX = curX.coerceAtLeast(0f); it.rippleY = curY.coerceAtLeast(0f); it.rippleAt = SystemClock.uptimeMillis() }
+        if (held >= 1400) act { hands.press("home") } else act { hands.press("back") }
+    }
+
     private var lastPx = 0.5f
     private var lastPy = 0.5f
     private fun lastPalmX() = lastPx
     private fun lastPalmY() = lastPy
 
-    private fun release(now: Long) {
+    private fun release(now: Long, pinch: Boolean) {
         val hands = handsRef ?: return
         overlay?.dragLine = false
         val held = now - fistSince
@@ -616,12 +744,14 @@ object AirControl {
             dragging = false
             curX = dragX
             curY = dragY
-            act { hands.swipe(ax, ay, ex, ey, 320) }
+            // a quick flick = a fast swipe (reels, pages); a slow drag stays slow
+            val dur = if (pinch) (now - dragStartAt).toInt().coerceIn(110, 450) else 320
+            act { hands.swipe(ax, ay, ex, ey, dur) }
         } else if (held in 60..4000) {
             if (now - lastTapAt < 250) return
             lastTapAt = now
             overlay?.let { it.rippleX = anchorX; it.rippleY = anchorY; it.rippleAt = SystemClock.uptimeMillis() }
-            if (held > 1500) {
+            if (held > (if (pinch) 800 else 1500)) {
                 act { val p = snap(hands, ax, ay); hands.swipe(p[0], p[1], p[0] + 1, p[1], 800) }
             } else {
                 act { val p = snap(hands, ax, ay); hands.tap(p[0], p[1]) }
