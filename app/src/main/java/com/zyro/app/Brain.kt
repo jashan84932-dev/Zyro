@@ -562,7 +562,7 @@ Current date and time: $now (India).
         /** HTTP code of the last failed quickJson/quickText attempt (0 = no network, -1 = no key, 429 = limit). */
         @Volatile var lastFail = 0
 
-        fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000, lite: Boolean = false): String? {
+        fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000, lite: Boolean = false, imageB64: String? = null): String? {
             if (!Prefs.hasGemini) { lastFail = -1; return null }
             lastFail = 0
             val order = if (lite) listOf("gemini-2.5-flash-lite", "gemini-2.5-flash") else listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
@@ -570,7 +570,7 @@ Current date and time: $now (India).
             for (model in order + listOf("gemini-flash-latest", "gemini-flash-lite-latest")) {
                 try {
                     val body = JSONObject()
-                        .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                        .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)).also { ps -> if (imageB64 != null) ps.put(JSONObject().put("inlineData", JSONObject().put("mimeType", "image/jpeg").put("data", imageB64))) })))
                         .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("responseMimeType", "application/json").put("temperature", 0.2).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
                     val (code, text) = Prefs.gpost(model, body.toString(), 8000, timeoutMs)
                     if (code !in 200..299) {

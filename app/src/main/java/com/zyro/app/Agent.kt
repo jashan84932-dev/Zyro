@@ -67,6 +67,10 @@ object Agent {
         if (running && (rl.contains("agent status") || rl.contains("kya kar rahe") || rl.contains("क्या कर रहे"))) {
             return "मैं अभी आपका काम कर रहा हूँ: $task"
         }
+        if (listOf("vision", "विज़न", "विजन").any { rl.contains(it) }) {
+            if (listOf("band", "बंद", "off", "stop").any { rl.contains(it) }) return Vision.stop(ctx)
+            if (listOf("chalu", "चालू", "on", "start", "shuru", "शुरू").any { rl.contains(it) }) return Vision.ask(ctx)
+        }
         val tn = Local.strip(rl)
         val explicit = TRIGGERS.any { tn.contains(Local.strip(it)) }
         val smart = !explicit && APPS.any { tn.contains(Local.strip(it)) } && ACTS.any { tn.contains(Local.strip(it)) } &&
@@ -440,6 +444,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         var nullObs = 0
         var logged = 0
         var calm = 0
+        var hinted = false
         val rec = ArrayList<JSONObject>()
         var recordable = true
         var stuckSeen = false
@@ -516,6 +521,14 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 same = 0
                 Thread.sleep(1500)
             }
+            // the agent gets a picture of the screen when text alone is not enough
+            val unlabeled = els.count { it.label.isEmpty() }
+            val hasPwd = els.any { it.label == "(password field)" }
+            val shot: String? = if (Vision.on && !hasPwd && (same >= 2 || els.size < 4 || unlabeled * 2 > els.size)) Vision.grab() else null
+            if (!Vision.on && !hinted && (same >= 3 || (els.size < 4 && step > 2))) {
+                hinted = true
+                say("बिना नाम वाले बटन देखने के लिए Settings में Agent vision चालू कर दो, तब मैं स्क्रीन की फोटो भी देख पाऊँगा।")
+            }
             // reflex: obvious popups are closed instantly, no AI call needed
             val rf = els.firstOrNull { e ->
                 val l = low(e.label).trim()
@@ -540,12 +553,13 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 if (progress.isNotBlank()) append("Your progress notes: ").append(progress).append('\n')
                 append("Current app package: ").append(pkg).append("\n")
                 append("Screen elements (id: label [tap/input]); '(no label @x,y)' means an icon at that screen position:\n").append(text.ifEmpty { "(nothing readable - maybe loading or a video; try wait, back, or tap_xy)\n" })
+                if (shot != null) append("A screenshot of the current screen is attached. Use it to see icons, video controls and anything without a label. To tap something you can see ONLY in the picture use action tap_norm with x,y between 0 and 1000 (0,0 = top-left, 1000,1000 = bottom-right).\n")
                 append("Actions done so far:\n")
                 if (history.isEmpty()) append("(none)\n") else history.takeLast(8).forEach { append("- ").append(it).append('\n') }
                 if (same >= 2) append("WARNING: the screen did not change after your last actions. Do something DIFFERENT (another element, scroll, back, tap_xy on an icon).\n")
                 append("""
 Choose ONE next action and reply with ONLY JSON:
-{"thought":"short reason","progress":"parts of the task already completed / parts still remaining","action":"tap|tap_xy|type|type_enter|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|wait_user|done|fail","id":0,"x":0,"y":0,"text":"","app":"","say":""}
+{"thought":"short reason","progress":"parts of the task already completed / parts still remaining","action":"tap|tap_xy|tap_norm|type|type_enter|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|wait_user|done|fail","id":0,"x":0,"y":0,"text":"","app":"","say":""}
 Rules:
 - tap: id = element number. tap_xy: x,y screen position (for icons without label, player controls, close X). type: id = input element number (0 = focused box), text = text. type_enter: type the text then press search/enter in ONE step (use for search boxes). enter: press keyboard search/enter. open_app: app = name (do it first if the right app is not open).
 - You must FINISH the task. Obstacles are normal and YOU solve them: dismiss popups/ads/rating/update/notification dialogs (Skip, Not now, Later, Close, X, Got it, Maybe later), allow normal app permissions, choose a profile if asked, wait when loading, scroll to find things, use the search box, try another tab/menu/icon, go back and retry a different route. Never give up on the first problem. Use fail only after you truly tried many different ways, and explain exactly what blocks you.
@@ -560,7 +574,7 @@ Rules:
             var told = false
             val tAi = System.currentTimeMillis()
             for (t in 0..5) {
-                reply = Brain.quickJson(prompt, 260, 25000, calm >= 2 && t == 0)
+                reply = Brain.quickJson(prompt, 260, 25000, calm >= 2 && t == 0 && shot == null, shot)
                 if (reply != null) break
                 val f = Brain.lastFail
                 if (f == 401 || f == 403 || f == -1) break
@@ -675,6 +689,18 @@ Rules:
                     val y = j.optInt("y", -1)
                     if (x < 0 || y < 0) history.add("tap_xy needs x and y")
                     else { history.add("tapped position $x,$y -> " + hands.tap(x, y)); recordable = false }
+                }
+                "tap_norm" -> {
+                    val nx = j.optDouble("x", -1.0)
+                    val ny = j.optDouble("y", -1.0)
+                    if (nx < 0 || ny < 0) history.add("tap_norm needs x and y between 0 and 1000")
+                    else {
+                        val (sw, sh) = Vision.realSize(ctx)
+                        val px = (nx / 1000.0 * sw).toInt().coerceIn(0, sw - 1)
+                        val py = (ny / 1000.0 * sh).toInt().coerceIn(0, sh - 1)
+                        history.add("tapped picture position $nx,$ny -> " + hands.tap(px, py))
+                        recordable = false
+                    }
                 }
                 "type" -> {
                     if (el != null && el.label == "(password field)") {

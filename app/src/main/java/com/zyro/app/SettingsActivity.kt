@@ -143,6 +143,12 @@ class SettingsActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         })
 
+        box.addView(button("Agent vision: ON (agent can see the screen picture)") {
+            Toast.makeText(this, Vision.ask(this), Toast.LENGTH_LONG).show()
+        })
+        box.addView(button("Agent vision: OFF") {
+            Toast.makeText(this, Vision.stop(this), Toast.LENGTH_SHORT).show()
+        })
         box.addView(button("Air control: start / stop (hand gestures)") {
             val a = Assistant.get(this)
             val r = if (AirControl.running) AirControl.stop() else AirControl.start(this, a.hands)
