@@ -78,6 +78,9 @@ class Assistant private constructor(private val app: Context) {
     /** Live mode / agent put their lines into the same transcript. */
     fun note(line: String) = main.post { log(line) }
 
+    /** Everything shown in the transcript, for the Copy log button. */
+    fun logText(): String = transcript.toString()
+
     @Volatile var liveActive = false
     private var liveMood = -1
     private var liveMoodAt = 0L

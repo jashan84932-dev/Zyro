@@ -272,6 +272,10 @@ object Prefs {
     var recipes: String
         get() = read("recipes", "{}")
         set(v) = write("recipes", v)
+    /** Air control cursor speed, kept between runs. */
+    var airGain: Float
+        get() = (read("airGain", "1.0").toFloatOrNull() ?: 1f).coerceIn(0.5f, 2.2f)
+        set(v) = write("airGain", v.toString())
     var githubToken: String
         get() = read("githubToken", "")
         set(v) = write("githubToken", v.trim())

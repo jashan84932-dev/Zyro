@@ -67,6 +67,7 @@ object Agent {
         if (running && (rl.contains("agent status") || rl.contains("kya kar rahe") || rl.contains("क्या कर रहे"))) {
             return "मैं अभी आपका काम कर रहा हूँ: $task"
         }
+        if (listOf("zyro check", "health check", "ज़ीरो चेक", "जीरो चेक", "सब चेक", "sab check", "self check", "diagnos").any { rl.contains(it) }) return Health.run(ctx, hands)
         if (listOf("vision", "विज़न", "विजन").any { rl.contains(it) }) {
             if (listOf("band", "बंद", "off", "stop").any { rl.contains(it) }) return Vision.stop(ctx)
             if (listOf("chalu", "चालू", "on", "start", "shuru", "शुरू").any { rl.contains(it) }) return Vision.ask(ctx)
@@ -172,8 +173,19 @@ object Agent {
         if (root == null) return null
         val pkg = root.packageName?.toString() ?: ""
         val list = ArrayList<El>()
+        var canDown = false
+        var canUp = false
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
-            if (list.size >= 55 || depth > 30) return
+            if (depth > 30) return
+            if (n.isScrollable && n.isVisibleToUser) {
+                try {
+                    for (ac in n.actionList) {
+                        if (ac.id == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) canDown = true
+                        if (ac.id == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) canUp = true
+                    }
+                } catch (e: Exception) {}
+            }
+            if (list.size >= 130) return
             val label = if (n.isPassword) "(password field)" else listOfNotNull(n.text?.toString()?.take(50), n.contentDescription?.toString()?.take(50))
                 .filter { it.isNotBlank() }.joinToString(" | ")
             val interesting = label.isNotEmpty() || n.isClickable || n.isEditable
@@ -188,6 +200,24 @@ object Agent {
             }
         }
         walk(root, 0)
+        if (list.size > 55) {
+            // too many: keep the useful ones first (input boxes, labelled buttons, a few icons), then plain text
+            val raw = ArrayList(list)
+            val picked = HashSet<Int>()
+            fun take(max: Int, pred: (El) -> Boolean) {
+                var c = 0
+                for (e in raw) {
+                    if (picked.size >= 55 || c >= max) break
+                    if (e.id !in picked && pred(e)) { picked.add(e.id); c++ }
+                }
+            }
+            take(10) { it.editable }
+            take(32) { it.clickable && it.label.isNotEmpty() }
+            take(8) { it.clickable && it.label.isEmpty() }
+            take(55) { true }
+            list.clear()
+            raw.filter { it.id in picked }.forEachIndexed { i, e -> list.add(El(i + 1, e.node, e.label, e.r, e.clickable, e.editable)) }
+        }
         val sb = StringBuilder()
         for (e in list) {
             sb.append(e.id).append(": ")
@@ -198,6 +228,8 @@ object Agent {
             if (f.isNotEmpty()) sb.append(" [").append(f.joinToString(",")).append("]")
             sb.append('\n')
         }
+        if (canDown || canUp) sb.append("(scrolling: more content below = ").append(if (canDown) "yes" else "no")
+            .append(", more above = ").append(if (canUp) "yes" else "no").append(")\n")
         return Triple(pkg, list, sb.toString())
     }
 
@@ -559,8 +591,9 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 if (same >= 2) append("WARNING: the screen did not change after your last actions. Do something DIFFERENT (another element, scroll, back, tap_xy on an icon).\n")
                 append("""
 Choose ONE next action and reply with ONLY JSON:
-{"thought":"short reason","progress":"parts of the task already completed / parts still remaining","action":"tap|tap_xy|tap_norm|type|type_enter|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|wait_user|done|fail","id":0,"x":0,"y":0,"text":"","app":"","say":""}
+{"thought":"short reason","progress":"parts of the task already completed / parts still remaining","action":"tap|tap_xy|tap_norm|scroll_find|type|type_enter|enter|scroll_down|scroll_up|back|home|open_app|wait|ask_user|wait_user|done|fail","id":0,"x":0,"y":0,"text":"","app":"","say":""}
 Rules:
+- scroll_find: text = words of the button/title you are looking for; scrolls down by itself (set say="up" to scroll up) until it shows on screen, then you tap it. Use this instead of many scroll_down steps. If the hint says there is no more content below, do not scroll down.
 - tap: id = element number. tap_xy: x,y screen position (for icons without label, player controls, close X). type: id = input element number (0 = focused box), text = text. type_enter: type the text then press search/enter in ONE step (use for search boxes). enter: press keyboard search/enter. open_app: app = name (do it first if the right app is not open).
 - You must FINISH the task. Obstacles are normal and YOU solve them: dismiss popups/ads/rating/update/notification dialogs (Skip, Not now, Later, Close, X, Got it, Maybe later), allow normal app permissions, choose a profile if asked, wait when loading, scroll to find things, use the search box, try another tab/menu/icon, go back and retry a different route. Never give up on the first problem. Use fail only after you truly tried many different ways, and explain exactly what blocks you.
 - Login: if the app needs login and the phone/email field is empty, use ask_user to get the phone number or email, type it, then continue. When an OTP is asked, use ask_user to get the OTP from the user (they read it from their SMS) and type it. Passwords, PINs and card details: NEVER type them; use wait_user with a short message so the user enters them, you continue automatically afterwards.
@@ -690,6 +723,24 @@ Rules:
                     if (x < 0 || y < 0) history.add("tap_xy needs x and y")
                     else { history.add("tapped position $x,$y -> " + hands.tap(x, y)); recordable = false }
                 }
+                "scroll_find" -> {
+                    val target = low(txt).trim()
+                    val up = low(sayText) == "up"
+                    var found = false
+                    var tries = 0
+                    while (target.isNotEmpty() && tries < 10 && !cancelled) {
+                        val o = observe(hands) ?: break
+                        if (o.second.any { low(it.label).contains(target) }) { found = true; break }
+                        val s0 = o.first + o.third.hashCode()
+                        hands.scroll(!up)
+                        tries++
+                        settle(hands, s0)
+                        val o2 = observe(hands) ?: break
+                        if (o2.first + o2.third.hashCode() == s0) break // end of the list
+                    }
+                    history.add("scroll_find \"$txt\": " + if (found) "FOUND on screen after $tries scrolls, tap it now" else "not found after $tries scrolls (end of list reached or it is not here)")
+                    recordable = false
+                }
                 "tap_norm" -> {
                     val nx = j.optDouble("x", -1.0)
                     val ny = j.optDouble("y", -1.0)
@@ -789,6 +840,28 @@ Rules:
             val ok = f.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
             if (ok) return "ok"
         }
-        return "Enter key not available on this phone; tap the search suggestion or search button instead."
+        // older Android: press the keyboard's own Search / Enter / Go key
+        try {
+            val names = setOf("search", "enter", "go", "done", "send", "next", "खोजें", "खोज", "सर्च", "जाएं", "भेजें")
+            fun findKey(n: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
+                if (n == null || depth > 12) return null
+                val d = (n.contentDescription?.toString() ?: n.text?.toString() ?: "").trim().lowercase()
+                if (d.isNotEmpty() && d in names) return n
+                for (i in 0 until n.childCount) {
+                    val f = findKey(n.getChild(i), depth + 1)
+                    if (f != null) return f
+                }
+                return null
+            }
+            for (w in svc.windows) {
+                if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue
+                val key = findKey(w.root, 0) ?: continue
+                if (key.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return "ok"
+                val r = Rect()
+                key.getBoundsInScreen(r)
+                return hands.tap(r.centerX(), r.centerY())
+            }
+        } catch (e: Exception) {}
+        return "Enter key not available; tap the search suggestion or the search button instead."
     }
 }

@@ -15,7 +15,9 @@ import java.util.Locale
 /** Gestures: face-down silence, pocket detection and a double shake for the torch. */
 object Gestures {
     @Volatile var faceDown = false
-    @Volatile var inPocket = false
+    /** In a pocket = covered AND dark for at least 2 seconds (a hand held over the phone for a wave does not count). */
+    val inPocket: Boolean get() = near && lux < 8f && nearStart != 0L && System.currentTimeMillis() - nearStart > 2000
+    @Volatile private var nearStart = 0L
 
     var onFlipUp: (() -> Unit)? = null
     var onFaceDown: (() -> Unit)? = null
@@ -32,8 +34,8 @@ object Gestures {
     private var downSince = 0L
     private var lastSpike = 0L
     private var torchOn = false
-    private var near = false
-    private var lux = 100f
+    @Volatile private var near = false
+    @Volatile private var lux = 100f
 
     fun pocketActive(): Boolean = Prefs.pocketMode && inPocket
     fun quiet(): Boolean = Prefs.faceDownQuiet && faceDown
@@ -67,7 +69,7 @@ object Gestures {
                     }
 
                     // double shake = torch on / off
-                    if (Prefs.shakeTorch && !faceDown) {
+                    if (Prefs.shakeTorch && !faceDown && !inPocket) {
                         val mag = Math.sqrt((x * x + y * y + z * z).toDouble()).toFloat()
                         if (Math.abs(mag - 9.81f) > 15f) {
                             val gap = now - lastSpike
@@ -93,9 +95,9 @@ object Gestures {
                 override fun onSensorChanged(e: SensorEvent) {
                     val wasNear = near
                     near = e.values[0] < limit
-                    inPocket = near && lux < 8f
                     val now = System.currentTimeMillis()
-                    if (near && !wasNear) nearSince = now
+                    if (near && !wasNear) { nearSince = now; nearStart = now }
+                    if (!near) nearStart = 0L
                     if (!near && wasNear && nearSince != 0L && now - nearSince < 700) {
                         nearSince = 0L
                         onWave?.invoke()
@@ -111,7 +113,6 @@ object Gestures {
             val l = object : SensorEventListener {
                 override fun onSensorChanged(e: SensorEvent) {
                     lux = e.values[0]
-                    inPocket = near && lux < 8f
                 }
                 override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
             }
@@ -134,6 +135,6 @@ object Gestures {
         lightL = null
         started = false
         faceDown = false
-        inPocket = false
+        nearStart = 0L
     }
 }

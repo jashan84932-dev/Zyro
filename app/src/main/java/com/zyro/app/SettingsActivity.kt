@@ -143,6 +143,19 @@ class SettingsActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         })
 
+        box.addView(button("Zyro check (find what is wrong)") {
+            val a = Assistant.get(this)
+            Toast.makeText(this, "Checking...", Toast.LENGTH_SHORT).show()
+            Thread {
+                val r = try { Health.run(applicationContext, a.hands) } catch (e: Exception) { "Check failed: ${e.message}" }
+                runOnUiThread { Toast.makeText(this, r, Toast.LENGTH_LONG).show() }
+            }.start()
+        })
+        box.addView(button("Copy log (send it to Claude)") {
+            val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Zyro log", Assistant.get(this).logText()))
+            Toast.makeText(this, "Log copied. Paste it in the chat.", Toast.LENGTH_LONG).show()
+        })
         box.addView(button("Agent vision: ON (agent can see the screen picture)") {
             Toast.makeText(this, Vision.ask(this), Toast.LENGTH_LONG).show()
         })

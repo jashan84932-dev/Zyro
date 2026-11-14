@@ -325,8 +325,8 @@ object AirControl {
 
     fun handle(ctx: Context, hands: Hands, t: String): String? {
         if (running && (t.contains(Local.strip("cursor")) || t.contains(Local.strip("कर्सर")))) {
-            if (listOf("tez", "तेज़", "तेज", "fast", "badhao", "बढ़ाओ").any { t.contains(Local.strip(it)) }) { gain = (gain * 1.25f).coerceAtMost(2.2f); return "कर्सर तेज़ कर दिया।" }
-            if (listOf("dheema", "धीमा", "slow", "kam", "कम").any { t.contains(Local.strip(it)) }) { gain = (gain / 1.25f).coerceAtLeast(0.5f); return "कर्सर धीमा कर दिया।" }
+            if (listOf("tez", "तेज़", "तेज", "fast", "badhao", "बढ़ाओ").any { t.contains(Local.strip(it)) }) { gain = (gain * 1.25f).coerceAtMost(2.2f); Prefs.airGain = gain; return "कर्सर तेज़ कर दिया।" }
+            if (listOf("dheema", "धीमा", "slow", "kam", "कम").any { t.contains(Local.strip(it)) }) { gain = (gain / 1.25f).coerceAtLeast(0.5f); Prefs.airGain = gain; return "कर्सर धीमा कर दिया।" }
         }
         if (TRIGGERS.none { t.contains(Local.strip(it)) }) return null
         return if (STOPS.any { t.contains(Local.strip(it)) }) stop() else start(ctx, hands)
@@ -337,6 +337,7 @@ object AirControl {
     fun start(ctx: Context, hands: Hands): String {
         if (running) return "हाथ के इशारे पहले से चल रहे हैं।"
         val app = ctx.applicationContext
+        gain = Prefs.airGain
         if (app.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             return "कैमरे की अनुमति चाहिए। Zyro खोलकर पावर बटन दबाओ, वहाँ अनुमति दे दो।"
         }
