@@ -56,10 +56,16 @@ object Extras {
             }
             word("हाँ", "हां", "haan", "han", "yes", "bhejo", "भेजो", "send", "भेज", "ok", "okay", "ओके", "ठीक") -> {
                 pendingWhatsApp = 0L
-                var r = hands.click("Send")
-                if (!r.startsWith("Clicked")) r = hands.click("भेजें")
-                if (!r.startsWith("Clicked")) r = hands.click("भेजो")
-                if (r.startsWith("Clicked")) "मैसेज भेज दिया।"
+                // WhatsApp may still be loading: try a few times
+                var r = ""
+                for (attempt in 0..4) {
+                    r = hands.click("Send")
+                    if (!r.startsWith("Clicked")) r = hands.click("भेजें")
+                    if (!r.startsWith("Clicked")) r = hands.click("भेजो")
+                    if (r.startsWith("Clicked")) break
+                    Thread.sleep(700)
+                }
+                if (r.startsWith("Clicked")) "भेज दिया।"
                 else "Send बटन नहीं मिला। WhatsApp में खुद भेज दो, मैसेज तैयार है।"
             }
             else -> {

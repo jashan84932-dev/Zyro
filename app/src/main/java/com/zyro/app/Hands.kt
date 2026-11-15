@@ -235,8 +235,31 @@ class Hands(private val app: Context) {
         "ज़ूम" to listOf("zoom"), "जूम" to listOf("zoom"), "मीट" to listOf("meet"), "गूगलमीट" to listOf("meet"),
         "फाइल" to listOf("files"), "फाइल्स" to listOf("files"), "फाइलमैनेजर" to listOf("files", "file manager", "my files"),
         "नोट्स" to listOf("notes", "keep"), "म्यूजिक" to listOf("music", "youtube music", "spotify"),
-        "वीडियो" to listOf("video", "youtube"), "टॉर्च" to listOf("flashlight", "torch")
+        "वीडियो" to listOf("video", "youtube"), "टॉर्च" to listOf("flashlight", "torch"),
+        "हॉटस्टार" to listOf("jiohotstar", "hotstar"), "हॉटस्टार" to listOf("jiohotstar", "hotstar"), "जियोहॉटस्टार" to listOf("jiohotstar", "hotstar"),
+        "जियोहोटस्टार" to listOf("jiohotstar", "hotstar"), "होटस्टार" to listOf("jiohotstar", "hotstar"), "जियोसिनेमा" to listOf("jiocinema", "jiohotstar"),
+        "प्राइम" to listOf("prime video", "amazon prime"), "प्राइमवीडियो" to listOf("prime video", "amazon prime"),
+        "ज़ोमैटो" to listOf("zomato"), "जोमैटो" to listOf("zomato"), "ज़ोमेटो" to listOf("zomato"), "स्विगी" to listOf("swiggy"),
+        "ओला" to listOf("ola"), "उबर" to listOf("uber"), "रैपिडो" to listOf("rapido"),
+        "एमएक्सप्लेयर" to listOf("mx player"), "सोनीलिव" to listOf("sonyliv", "sony liv"), "जी5" to listOf("zee5"), "ज़ी5" to listOf("zee5"),
+        "शेयरचैट" to listOf("sharechat"), "मोज" to listOf("moj"), "मिंत्रा" to listOf("myntra"), "मीशो" to listOf("meesho"),
+        "बुकमायशो" to listOf("bookmyshow"), "आईआरसीटीसी" to listOf("irctc"), "लिंक्डइन" to listOf("linkedin"), "पिनटेरेस्ट" to listOf("pinterest"),
+        "डिस्कॉर्ड" to listOf("discord"), "रेडिट" to listOf("reddit"), "हॉटस्टारटीवी" to listOf("jiohotstar", "hotstar")
     )
+
+    private fun editDistance(a: String, b: String): Int {
+        if (kotlin.math.abs(a.length - b.length) > 2) return 99
+        var prev = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            val cur = IntArray(b.length + 1)
+            cur[0] = i
+            for (j in 1..b.length) {
+                cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
+            }
+            prev = cur
+        }
+        return prev[b.length]
+    }
 
     fun openApp(name: String): String {
         val q = squash(name)
@@ -249,8 +272,10 @@ class Hands(private val app: Context) {
         fun label(i: ResolveInfo) = squash(i.loadLabel(pm).toString())
         val match: ResolveInfo? =
             wanted.firstNotNullOfOrNull { w -> apps.firstOrNull { label(it) == w } }
-                ?: wanted.firstNotNullOfOrNull { w -> apps.firstOrNull { w.length >= 3 && label(it).contains(w) } }
+                ?: wanted.firstNotNullOfOrNull { w -> apps.filter { w.length >= 3 && label(it).contains(w) }.minByOrNull { label(it).length } }
                 ?: wanted.firstNotNullOfOrNull { w -> apps.firstOrNull { w.length >= 4 && squash(it.activityInfo.packageName).contains(w) } }
+                // speech often drops or swaps a letter ("instagrm", "whatsap"): accept a close spelling
+                ?: wanted.filter { it.length >= 5 }.firstNotNullOfOrNull { w -> apps.filter { editDistance(label(it), w) <= (if (w.length >= 8) 2 else 1) }.minByOrNull { editDistance(label(it), w) } }
         if (match == null) return "No installed app matches \"$name\"."
         val intent = pm.getLaunchIntentForPackage(match.activityInfo.packageName)
             ?: return "That app can't be launched."
@@ -339,14 +364,67 @@ class Hands(private val app: Context) {
         ctx.checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
     /** Returns (name, number) of the first contact whose name contains [name], or null. */
+    private val KIN = listOf(
+        listOf("mummy", "mom", "mama", "maa", "ammi", "mother", "मम्मी", "माँ", "मां", "माता", "अम्मी", "मॉम", "मम्मा"),
+        listOf("papa", "dad", "daddy", "pita", "father", "पापा", "पिता", "डैड", "अब्बू", "abbu", "पप्पा"),
+        listOf("bhai", "bhaiya", "brother", "भाई", "भैया", "bro"),
+        listOf("didi", "sister", "behen", "bahan", "दीदी", "बहन", "बहिन"),
+        listOf("dadi", "दादी"), listOf("nani", "नानी"), listOf("dada", "दादा"), listOf("nana", "नाना"),
+        listOf("wife", "biwi", "patni", "बीवी", "पत्नी"),
+        listOf("husband", "pati", "पति")
+    )
+
+    /** Best matching contact for a spoken name: knows family words in both scripts, prefers exact / starred / often-called / mobile numbers. */
     fun findContact(name: String): Pair<String, String>? {
         if (name.isBlank() || !hasContactsPermission()) return null
+        val n = name.trim().lowercase()
+        val terms = LinkedHashSet<String>()
+        terms.add(n)
+        val parts = n.split(Regex("\\s+"))
+        for (g in KIN) if (g.any { it.lowercase() == n || parts.contains(it.lowercase()) }) g.forEach { terms.add(it.lowercase()) }
+        var bestName: String? = null
+        var bestNum: String? = null
+        var bestScore = 0
+        try {
+            val cols = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.TYPE,
+                "starred",
+                "times_contacted"
+            )
+            val cur = ctx.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, cols, null, null, null)
+            cur?.use {
+                while (it.moveToNext()) {
+                    val dn = (it.getString(0) ?: "").lowercase()
+                    val num = it.getString(1) ?: continue
+                    if (dn.isEmpty()) continue
+                    var s = 0
+                    for (t in terms) {
+                        val sc = when {
+                            dn == t -> 100
+                            dn.startsWith("$t ") -> 85
+                            dn.startsWith(t) -> 75
+                            dn.split(Regex("\\s+")).contains(t) -> 65
+                            dn.contains(t) -> 40
+                            else -> 0
+                        }
+                        if (sc > s) s = sc
+                    }
+                    if (s == 0) continue
+                    if (it.getInt(3) == 1) s += 10
+                    s += minOf(it.getInt(4), 50) / 5
+                    if (it.getInt(2) == ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE) s += 5
+                    if (s > bestScore) { bestScore = s; bestName = it.getString(0); bestNum = num }
+                }
+            }
+        } catch (e: Exception) {
+            // fall back to the simple search below
+        }
+        if (bestName != null && bestNum != null) return Pair(bestName!!, bestNum!!)
         val cur = ctx.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            arrayOf(
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                ContactsContract.CommonDataKinds.Phone.NUMBER
-            ),
+            arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?",
             arrayOf("%" + name.trim() + "%"),
             null
