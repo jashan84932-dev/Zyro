@@ -610,6 +610,19 @@ object AirControl {
         }
     }
 
+    private var lastBuzz = 0L
+    private var lastLock: RectF? = null
+    /** A tiny tick in the hand, so air gestures feel real: a soft one when the cursor locks onto a button, a firmer one for a tap. */
+    private fun buzz(ms: Long) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastBuzz < 60) return
+        lastBuzz = now
+        try {
+            val v = appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator ?: return
+            v.vibrate(android.os.VibrationEffect.createOneShot(ms, if (ms >= 25) 200 else 70))
+        } catch (e: Exception) { /* no vibrator */ }
+    }
+
     private fun d(ax: Float, ay: Float, bx: Float, by: Float) = hypot((ax - bx).toDouble(), (ay - by).toDouble()).toFloat()
 
     private var openPd = -1f
@@ -664,6 +677,8 @@ object AirControl {
                 prevCurX = cx
                 prevCurY = cy
                 overlay?.hl = tg?.let { RectF(it) }
+                if (tg == null) lastLock = null
+                else if (lastLock == null || !lastLock!!.equals(RectF(tg))) { lastLock = RectF(tg); buzz(12) }
                 curX = cx
                 curY = cy
                 trail.addLast(floatArrayOf(now.toFloat(), curX, curY))
@@ -730,6 +745,7 @@ object AirControl {
         val held = now - vSince
         if (held < 350) return
         overlay?.let { it.rippleX = curX.coerceAtLeast(0f); it.rippleY = curY.coerceAtLeast(0f); it.rippleAt = SystemClock.uptimeMillis() }
+        buzz(30)
         if (held >= 1400) act { hands.press("home") } else act { hands.press("back") }
     }
 
@@ -757,6 +773,7 @@ object AirControl {
             if (now - lastTapAt < 250) return
             lastTapAt = now
             overlay?.let { it.rippleX = anchorX; it.rippleY = anchorY; it.rippleAt = SystemClock.uptimeMillis() }
+            buzz(30)
             if (held > (if (pinch) 800 else 1500)) {
                 act { val p = snap(hands, ax, ay); hands.swipe(p[0], p[1], p[0] + 1, p[1], 800) }
             } else {
@@ -783,7 +800,9 @@ object AirControl {
             // finger up = page moves up, like dragging it with your own finger
             val from = if (dy > 0) mid + len / 2 else mid - len / 2
             val to = if (dy > 0) mid - len / 2 else mid + len / 2
-            act { hands.swipe(cx, from, cx, to, 170) }
+            // a quick flick of the finger makes a quick fling (reels, long lists); a slow move scrolls gently
+            val dur = (170 - (abs(dy) - 0.055f) * 1400f).coerceIn(90f, 170f).toInt()
+            act { hands.swipe(cx, from, cx, to, dur) }
         }
     }
 

@@ -18,12 +18,17 @@ object Memory {
     }
 
     private var turns = 0
+    @Volatile private var learnPauseUntil = 0L
 
     /** Every few turns, quietly pull lasting facts about the user out of the recent chat. */
     fun learn(force: Boolean = false) {
         if ((!force && ++turns % 4 != 0) || !Prefs.hasGemini) return
+        // do not spend the free Gemini quota on this when it is already tight (the agent and Live need it more)
+        if (!force && System.currentTimeMillis() < learnPauseUntil) return
         val h = history().takeLast(8)
         if (h.isEmpty()) return
+        // small talk like "haan", "theek hai", "ok" holds nothing worth remembering
+        if (!force && h.filter { it.first == "user" }.sumOf { it.second.length } < 40) return
         val chat = h.joinToString("\n") { (r, t) -> (if (r == "assistant") "Zyro: " else "User: ") + t.take(300) }
         val known = facts().takeLast(60).joinToString("; ")
         val j = Brain.quickJson(
@@ -32,7 +37,10 @@ object Memory {
                 "If the user corrected or changed something that is already known (moved city, changed job, new phone, changed mind), also list the old known fact in \"outdated\", copied exactly. " +
                 "Reply strict JSON: {\"facts\":[\"short fact in the user's own words\"],\"outdated\":[]}",
             260, 25000, true
-        ) ?: return
+        ) ?: run {
+            if (Brain.lastFail == 429) learnPauseUntil = System.currentTimeMillis() + 3 * 60_000L
+            return
+        }
         try {
             val obj = org.json.JSONObject(j.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim())
             val old = obj.optJSONArray("outdated")
@@ -60,11 +68,26 @@ object Memory {
         saveHistory(h)
     }
 
+    private fun tokens(t: String): Set<String> =
+        t.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length > 1 }.toSet()
+
     fun addFact(fact: String) {
         val clean = fact.trim().take(300)
         if (clean.isEmpty()) return
         val list = facts().toMutableList()
         if (list.any { it.equals(clean, ignoreCase = true) }) return
+        // a near-copy ("Jashan ko chai pasand hai" vs "Jashan ko chai bahut pasand hai") is not stored twice;
+        // if the new one is longer it replaces the older shorter wording
+        val nt = tokens(clean)
+        for (i in list.indices) {
+            val ot = tokens(list[i])
+            if (nt.size < 3 || ot.size < 3) continue
+            val common = nt.count { it in ot }
+            if (common.toFloat() / minOf(nt.size, ot.size) >= 0.8f) {
+                if (clean.length > list[i].length) { list[i] = clean; saveFacts(list) }
+                return
+            }
+        }
         list.add(clean)
         while (list.size > MAX_FACTS) list.removeAt(0)
         saveFacts(list)

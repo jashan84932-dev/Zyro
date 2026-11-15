@@ -33,6 +33,8 @@ object Gestures {
 
     private var downSince = 0L
     private var lastSpike = 0L
+    private var burstStart = 0L
+    private var burstCount = 0
     private var torchOn = false
     @Volatile private var near = false
     @Volatile private var lux = 100f
@@ -72,6 +74,10 @@ object Gestures {
                     if (Prefs.shakeTorch && !faceDown && !inPocket) {
                         val mag = Math.sqrt((x * x + y * y + z * z).toDouble()).toFloat()
                         if (Math.abs(mag - 9.81f) > 15f) {
+                            // walking, running or a bumpy ride makes many spikes: only a deliberate pair counts
+                            if (now - burstStart > 3000) { burstStart = now; burstCount = 0 }
+                            burstCount++
+                            if (burstCount > 4) { lastSpike = 0L; return }
                             val gap = now - lastSpike
                             if (gap in 250..900) {
                                 lastSpike = 0L
@@ -98,7 +104,7 @@ object Gestures {
                     val now = System.currentTimeMillis()
                     if (near && !wasNear) { nearSince = now; nearStart = now }
                     if (!near) nearStart = 0L
-                    if (!near && wasNear && nearSince != 0L && now - nearSince < 700) {
+                    if (!near && wasNear && nearSince != 0L && now - nearSince < 700 && lux >= 4f) {
                         nearSince = 0L
                         onWave?.invoke()
                     }

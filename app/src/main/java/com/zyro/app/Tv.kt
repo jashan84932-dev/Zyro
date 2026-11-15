@@ -146,7 +146,14 @@ object Tv {
      * volume_down, mute, channel_up, channel_down, menu, play_pause, settings,
      * or an app name: youtube, netflix, prime.
      */
+    @Volatile private var retried = false
+
     fun run(command: String, times: Int = 1): String {
+        val first = !retried
+        try { return runOnce(command, times) } finally { if (first) retried = false }
+    }
+
+    private fun runOnce(command: String, times: Int): String {
         val cmd = command.trim().lowercase().replace(" ", "_")
         synchronized(connLock) {
             if (!isPaired()) return "The TV is not paired yet. Pair it in the Zyro setup (step 5)."
@@ -165,8 +172,10 @@ object Tv {
                 }
                 "Sent $cmd to the TV."
             } catch (e: Exception) {
+                // the connection often goes stale while the TV sleeps: reconnect and try once more
                 closeRemote()
-                "Couldn't send to the TV: ${e.message}"
+                if (!retried && ensureRemote() == null) { retried = true; return runOnce(command, times) }
+                "टीवी को कमांड नहीं भेज पाया: ${e.message}"
             }
         }
     }
@@ -183,7 +192,13 @@ object Tv {
                 "Opened YouTube search for $query on the TV."
             } catch (e: Exception) {
                 closeRemote()
-                "Couldn't send to the TV: ${e.message}"
+                if (ensureRemote() == null) {
+                    try {
+                        send(fBytes(90, fStr(1, "https://www.youtube.com/results?search_query=" + android.net.Uri.encode(query))))
+                        return "Opened YouTube search for $query on the TV."
+                    } catch (e2: Exception) { closeRemote() }
+                }
+                "टीवी को कमांड नहीं भेज पाया: ${e.message}"
             }
         }
     }

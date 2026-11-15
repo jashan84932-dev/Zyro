@@ -100,11 +100,25 @@ class Hands(private val app: Context) {
         val svc = service ?: return needService
         val root = svc.rootInActiveWindow ?: return "The screen can't be read right now."
         if (label.isBlank()) return "No label given."
-        for (node in root.findAccessibilityNodeInfosByText(label)) {
+        // exact label matches first ("Send" before "Send later"), then partial ones
+        val found = root.findAccessibilityNodeInfosByText(label).sortedBy { nd ->
+            val t = (nd.text ?: nd.contentDescription)?.toString()?.trim() ?: ""
+            if (t.equals(label.trim(), ignoreCase = true)) 0 else 1
+        }
+        for (node in found) {
             var n: AccessibilityNodeInfo? = node
             while (n != null && !n.isClickable) n = n.parent
             if (n != null && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                 return "Clicked \"$label\"."
+            }
+        }
+        // nothing clickable around the text: tap the middle of the visible text itself
+        for (node in found) {
+            val r = android.graphics.Rect()
+            node.getBoundsInScreen(r)
+            if (node.isVisibleToUser && r.width() > 0 && r.height() > 0) {
+                val res = tap(r.centerX(), r.centerY())
+                if (res.isNotBlank() && !res.startsWith("Invalid")) return "Tapped \"$label\"."
             }
         }
         return "Couldn't find a clickable \"$label\". Use read_screen and tap by coordinates instead."

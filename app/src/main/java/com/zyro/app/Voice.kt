@@ -128,7 +128,19 @@ class Voice(private val ctx: Context) {
         } else {
             for ((i, p) in parts.withIndex()) {
                 val id = if (i == parts.size - 1) my.toString() else "p$my"
+                // each sentence gets its own small tune: questions lift, exclamations brighten, trailing dots slow down
+                var pt = basePitch * st.pitch
+                var rt = baseRate * st.rate
+                when {
+                    p.endsWith("?") || p.endsWith("?\"") -> { pt *= 1.06f }
+                    p.endsWith("!") -> { pt *= 1.04f; rt *= 1.04f }
+                    p.endsWith("...") || p.endsWith("…") -> { rt *= 0.9f }
+                }
+                tts?.setPitch(pt.coerceIn(0.5f, 2f))
+                tts?.setSpeechRate(rt.coerceIn(0.5f, 2f))
                 tts?.speak(p, if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id)
+                // a tiny breath between sentences, like a person
+                if (i < parts.size - 1) tts?.playSilence(if (p.endsWith("?")) 220 else 140, TextToSpeech.QUEUE_ADD, null)
             }
         }
     }

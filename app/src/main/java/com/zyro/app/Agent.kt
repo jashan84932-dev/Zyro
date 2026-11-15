@@ -456,7 +456,11 @@ object Agent {
 Is the WHOLE task (every part the user asked for) REALLY completed right now, judging from the screen and the actions? A login page, home page, loading spinner, search page, error, popup, or a list where the item is not yet playing/added/opened means NOT complete. For 'play/start something' the player or live content must be visible.
 Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if not complete"}""")
         }
-        val r = Brain.quickJson(p, 160, 12000, true) ?: return Pair(true, "")
+        // with Vision on, the checker also looks at the real picture: a video that is really playing cannot be proven from text alone
+        val hasPwd = o.second.any { it.label == "(password field)" }
+        val shot: String? = if (Vision.on && !hasPwd) Vision.grab() else null
+        val q = if (shot != null) p + "\nA screenshot of the current screen is attached; trust it for what is really visible (video playing, correct channel/title, popups)." else p
+        val r = Brain.quickJson(q, 160, if (shot != null) 18000 else 12000, true, shot) ?: return Pair(true, "")
         return try {
             val j = JSONObject(r.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim())
             Pair(j.optBoolean("complete", true), j.optString("next", j.optString("why", "")))
@@ -802,23 +806,29 @@ Rules:
             }
             while (logged < history.size) { Assistant.get(ctx).note("⚙ " + history[logged]); logged++ }
             Assistant.get(ctx).note("⏱ step $step: AI $lastAi ms, total ${(System.currentTimeMillis() - t00) / 1000} s${if (calm >= 2) " (fast model)" else ""}")
-            settle(hands, sig)
+            val changed = settle(hands, sig)
+            // tell the AI which actions did nothing, so it stops repeating them
+            if (!changed && action != "wait" && action != "wait_user" && action != "ask_user" && history.isNotEmpty()) {
+                val k = history.size - 1
+                if (!history[k].contains("SCREEN DID NOT CHANGE")) history[k] = history[k] + " [SCREEN DID NOT CHANGE - this did not work, try something different]"
+            }
         }
         if (cancelled) say("ठीक है, रुक गया।") else say("काफ़ी कोशिश की पर पूरा नहीं हुआ। बाकी आप देख लो।")
     }
 
     /** Waits only as long as the screen needs to change (up to ~2.2 s) instead of a fixed pause. */
-    private fun settle(hands: Hands, before: String) {
+    private fun settle(hands: Hands, before: String): Boolean {
         val end = System.currentTimeMillis() + 2200
         Thread.sleep(120)
         while (System.currentTimeMillis() < end && !cancelled) {
             val o = observe(hands)
             if (o != null && (o.first + o.third.hashCode()) != before) {
                 Thread.sleep(140) // let the animation finish
-                return
+                return true
             }
             Thread.sleep(80)
         }
+        return false
     }
 
     private fun tapEl(hands: Hands, el: El): String {

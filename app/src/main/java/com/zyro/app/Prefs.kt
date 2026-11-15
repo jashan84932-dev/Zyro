@@ -198,6 +198,8 @@ object Prefs {
      * One Gemini REST call. Tries the Zyro server first (when set); if that fails for any reason
      * and an own key exists, silently retries direct. One quick retry on 5xx. Returns (code, body); code 0 = no network.
      */
+    @Volatile var cancelNet = false
+
     fun gpost(model: String, body: String, connMs: Int, readMs: Int): Pair<Int, String> {
         var last: Pair<Int, String> = Pair(0, "")
         val routes = ArrayList<Boolean>()
@@ -229,6 +231,8 @@ object Prefs {
                 } catch (e: Exception) {
                     last = Pair(0, e.message ?: "")
                     lastRoute = if (proxy) "server" else "direct"
+                    // a dropped connection on mobile data is common: retry once. A slow reply (read timeout) is not retried.
+                    if (attempt == 0 && e !is java.net.SocketTimeoutException && !cancelNet) { Thread.sleep(500); continue }
                     break
                 } finally {
                     // no disconnect: keeps the TLS connection warm for the next call (faster)
