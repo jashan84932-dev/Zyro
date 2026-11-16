@@ -491,7 +491,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         planText = ""
         progress = ""
         val words = job.trim().split(Regex("\\s+")).size
-        planThread = Thread {
+        planThread = if (words < 6) null else Thread {
             planText = Brain.quickText(
                 "A phone agent must do this task on an Android phone: \"$job\". Split it into its separate parts in the exact order the user said, then write a short numbered plan (max 8 steps, each under 10 words) including likely obstacles " +
                     "(login with phone number + OTP, permission popups, ads, 'update app', profile pick, slow loading) and how to get past each. Plain text, no preface.",

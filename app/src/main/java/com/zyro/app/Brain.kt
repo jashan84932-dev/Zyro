@@ -536,6 +536,8 @@ Current date and time: $now (India).
         /** One plain question to Gemini, no tools. Returns null when there is no key or no answer. */
         fun quickText(prompt: String, maxTokens: Int = 200, search: Boolean = false): String? {
             if (!Prefs.hasGemini) return null
+            if (!search && Groq.ready) Groq.chat(prompt, maxTokens, 12000, false)?.let { return it }
+            if (Prefs.geminiKeysRaw.isBlank() && !Prefs.viaProxy) return null
             for (model in if (search) listOf("gemini-2.5-flash", "gemini-2.5-flash-lite") else listOf("gemini-2.5-flash-lite", "gemini-2.5-flash")) {
                 try {
                     val body = JSONObject()
@@ -565,6 +567,11 @@ Current date and time: $now (India).
         fun quickJson(prompt: String, maxTokens: Int = 500, timeoutMs: Int = 25000, lite: Boolean = false, imageB64: String? = null): String? {
             if (!Prefs.hasGemini) { lastFail = -1; return null }
             lastFail = 0
+            // text-only questions go to the very fast Groq first; Gemini is the safety net
+            if (imageB64 == null && Groq.ready) {
+                Groq.chat(prompt, maxTokens, minOf(timeoutMs, 15000), true)?.let { return it }
+            }
+            if (Prefs.geminiKeysRaw.isBlank() && !Prefs.viaProxy) { lastFail = if (Groq.lastFail != 0) Groq.lastFail else -1; return null }
             val order = if (lite) listOf("gemini-2.5-flash-lite", "gemini-2.5-flash") else listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
             // each model has its own free-limit bucket, so extra models = more headroom
             for (model in order + listOf("gemini-flash-latest", "gemini-flash-lite-latest")) {

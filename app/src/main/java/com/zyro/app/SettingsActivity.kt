@@ -40,6 +40,7 @@ class SettingsActivity : Activity() {
     private lateinit var logScroll: ScrollView
     private lateinit var apiKey: EditText
     private lateinit var geminiKey: EditText
+    private lateinit var groqKey: EditText
     private lateinit var friendName: EditText
     private lateinit var userName: EditText
     private lateinit var customVoice: CheckBox
@@ -221,8 +222,12 @@ class SettingsActivity : Activity() {
         })
 
         box.addView(label("Free Gemini key (BEST free brain) - get it at aistudio.google.com"))
-        geminiKey = field("paste Gemini key here", secret = true, value = Prefs.geminiKey)
+        geminiKey = field("paste Gemini key here (extra keys: separate with a comma)", secret = true, value = Prefs.geminiKeysRaw)
         box.addView(geminiKey)
+
+        box.addView(label("Groq key (FAST free brain for the agent) - get it at console.groq.com"))
+        groqKey = field("paste Groq key here (starts with gsk_)", secret = true, value = Prefs.groqKey)
+        box.addView(groqKey)
 
         box.addView(label("ZYRO SERVER (optional, hides your key) - worker URL like wss://xxx.workers.dev"))
         proxyUrl = field("wss://your-worker.workers.dev", value = Prefs.liveProxy)
@@ -273,7 +278,8 @@ class SettingsActivity : Activity() {
     }
 
     private fun saveSettings() {
-        Prefs.geminiKey = geminiKey.text.toString()
+        Prefs.geminiKeysRaw = geminiKey.text.toString()
+        Prefs.groqKey = groqKey.text.toString()
         Prefs.apiKey = apiKey.text.toString()
         Prefs.liveProxy = proxyUrl.text.toString()
         Prefs.liveToken = proxyToken.text.toString()

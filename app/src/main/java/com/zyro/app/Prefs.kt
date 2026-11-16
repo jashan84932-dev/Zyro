@@ -24,9 +24,23 @@ object Prefs {
         set(v) = write("apiKey", v.trim())
 
     /** Free Google Gemini key (aistudio.google.com) – a reliable free brain. */
-    var geminiKey: String
+    /** Everything typed in the key box: one key, or several separated by comma / space / new line. */
+    var geminiKeysRaw: String
         get() = read("geminiKey", "")
         set(v) = write("geminiKey", v.trim())
+
+    private val keyList: List<String> get() = geminiKeysRaw.split(Regex("[,\\s;]+")).filter { it.length > 10 }
+    private val keyCool = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** The key to use right now: the first one that is not resting after a "limit full" answer. */
+    var geminiKey: String
+        get() {
+            val l = keyList
+            if (l.isEmpty()) return geminiKeysRaw
+            val now = System.currentTimeMillis()
+            return l.firstOrNull { (keyCool[it] ?: 0L) < now } ?: l.first()
+        }
+        set(v) { geminiKeysRaw = v }
 
     var geminiModel: String
         get() = read("geminiModel", DEFAULT_GEMINI).ifBlank { DEFAULT_GEMINI }
@@ -169,7 +183,11 @@ object Prefs {
         get() = read("liveProxy", "")
         set(v) = write("liveProxy", v.trim())
     /** True when Gemini is reachable: own key, or the Zyro server (proxy) is set. */
-    val hasGemini: Boolean get() = geminiKey.isNotBlank() || (liveProxy.isNotBlank() && liveToken.isNotBlank())
+    var groqKey: String
+        get() = read("groqKey", "")
+        set(v) = write("groqKey", v.trim())
+
+    val hasGemini: Boolean get() = groqKey.isNotBlank() || geminiKey.isNotBlank() || (liveProxy.isNotBlank() && liveToken.isNotBlank())
 
     /** REST url for a Gemini model; goes through the Zyro server when one is set (key stays hidden). */
     fun geminiUrl(model: String): String {
@@ -206,7 +224,9 @@ object Prefs {
         if (viaProxy) routes.add(true)
         if (geminiKey.isNotBlank() || !viaProxy) routes.add(false)
         for (proxy in routes) {
-            for (attempt in 0..1) {
+            val maxAttempt = if (proxy) 1 else maxOf(1, keyList.size)
+            for (attempt in 0..maxAttempt) {
+                val usedKey = geminiKey
                 var conn: java.net.HttpURLConnection? = null
                 try {
                     conn = java.net.URL(urlFor(model, proxy)).openConnection() as java.net.HttpURLConnection
@@ -215,7 +235,7 @@ object Prefs {
                     conn.readTimeout = readMs
                     conn.doOutput = true
                     conn.setRequestProperty("content-type", "application/json")
-                    if (proxy) conn.setRequestProperty("x-app-token", liveToken) else conn.setRequestProperty("x-goog-api-key", geminiKey)
+                    if (proxy) conn.setRequestProperty("x-app-token", liveToken) else conn.setRequestProperty("x-goog-api-key", usedKey)
                     conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                     val code = conn.responseCode
                     val stream = if (code in 200..299) conn.inputStream else conn.errorStream
@@ -226,6 +246,11 @@ object Prefs {
                     }
                     last = if (code in 200..299) Pair(502, text) else Pair(code, text)
                     lastRoute = if (proxy) "server" else "direct"
+                    // this key's limit is full: rest it for a minute and go on with the next key straight away
+                    if (code == 429 && !proxy && keyList.size > 1) {
+                        keyCool[usedKey] = System.currentTimeMillis() + 60_000L
+                        if (keyList.any { (keyCool[it] ?: 0L) < System.currentTimeMillis() }) continue
+                    }
                     if (code >= 500 && attempt == 0) { Thread.sleep(350); continue }
                     break
                 } catch (e: Exception) {
