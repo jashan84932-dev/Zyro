@@ -290,16 +290,16 @@ class ScanView(ctx: Context) : View(ctx) {
         val ph = ((t % 2400L) / 2400f)
         val tri = if (ph < 0.5f) ph * 2f else 2f - ph * 2f
         val ease = tri * tri * (3f - 2f * tri)
-        val ly = dst.top + ease * dst.height
+        val ly = dst.top + ease * dst.height()
 
         if (!done) {
             // twinkling data points in the part that was already scanned
             for (d in dots) {
-                val dy = dst.top + d[1] * dst.height
+                val dy = dst.top + d[1] * dst.height()
                 if (dy < ly) {
                     val a = (0.5f + 0.5f * Math.sin(t / 260.0 + d[2] * 6.28)).toFloat()
                     p.color = Color.argb((60 + 170 * a).toInt(), 140, 215, 255)
-                    c.drawCircle(dst.left + d[0] * dst.width, dy, (1.6f + 1.6f * a) * dd, p)
+                    c.drawCircle(dst.left + d[0] * dst.width(), dy, (1.6f + 1.6f * a) * dd, p)
                 }
             }
             // glow behind the line, then the line itself
