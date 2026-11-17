@@ -42,8 +42,19 @@ object Gestures {
     fun pocketActive(): Boolean = Prefs.pocketMode && inPocket
     fun quiet(): Boolean = Prefs.faceDownQuiet && faceDown
 
+    private var appCtx: Context? = null
+
+    /** A short tick so a gesture feels acknowledged even when the screen is off. */
+    private fun tick() {
+        try {
+            val v = appCtx?.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator ?: return
+            v.vibrate(android.os.VibrationEffect.createOneShot(30, 200))
+        } catch (e: Exception) { }
+    }
+
     fun start(ctx: Context, hands: Hands) {
         if (started) return
+        appCtx = ctx.applicationContext
         val m = ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         sm = m
         val acc = m.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -83,6 +94,7 @@ object Gestures {
                                 lastSpike = 0L
                                 torchOn = !torchOn
                                 hands.torch(torchOn)
+                                tick()
                             } else if (gap > 900 || lastSpike == 0L) {
                                 lastSpike = now
                             }
@@ -106,6 +118,7 @@ object Gestures {
                     if (!near) nearStart = 0L
                     if (!near && wasNear && nearSince != 0L && now - nearSince < 700 && lux >= 4f) {
                         nearSince = 0L
+                        tick()
                         onWave?.invoke()
                     }
                 }

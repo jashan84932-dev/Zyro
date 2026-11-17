@@ -183,11 +183,20 @@ object Prefs {
         get() = read("liveProxy", "")
         set(v) = write("liveProxy", v.trim())
     /** True when Gemini is reachable: own key, or the Zyro server (proxy) is set. */
+    var cerebrasKey: String
+        get() = read("cerebrasKey", "")
+        set(v) = write("cerebrasKey", v.trim())
+
+    /** The user's relaxed thumb-index gap, learned by Air control so pinch works from the first second. */
+    var airOpen: Float
+        get() = read("airOpenPd", "-1").toFloatOrNull() ?: -1f
+        set(v) = write("airOpenPd", v.toString())
+
     var groqKey: String
         get() = read("groqKey", "")
         set(v) = write("groqKey", v.trim())
 
-    val hasGemini: Boolean get() = groqKey.isNotBlank() || geminiKey.isNotBlank() || (liveProxy.isNotBlank() && liveToken.isNotBlank())
+    val hasGemini: Boolean get() = groqKey.isNotBlank() || cerebrasKey.isNotBlank() || geminiKey.isNotBlank() || (liveProxy.isNotBlank() && liveToken.isNotBlank())
 
     /** REST url for a Gemini model; goes through the Zyro server when one is set (key stays hidden). */
     fun geminiUrl(model: String): String {

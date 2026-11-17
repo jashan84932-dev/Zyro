@@ -625,7 +625,8 @@ object AirControl {
 
     private fun d(ax: Float, ay: Float, bx: Float, by: Float) = hypot((ax - bx).toDouble(), (ay - by).toDouble()).toFloat()
 
-    private var openPd = -1f
+    private var openPd = -2f
+    private var openSaved = 0L
 
     private fun process(x: FloatArray, y: FloatArray, now: Long) {
         // a finger is "up" when its tip is clearly farther from the wrist than its middle joint (works at any hand angle)
@@ -642,7 +643,12 @@ object AirControl {
         val pd = d(x[4], y[4], x[8], y[8]) / palmLen
         val others = (if (mid) 1 else 0) + (if (ring) 1 else 0) + (if (pinky) 1 else 0)
         // learn this user's relaxed thumb-index gap while the hand is open, so the pinch threshold fits their hand
-        if (stable == OPEN && n >= 3) openPd = if (openPd < 0f) pd else openPd * 0.97f + pd * 0.03f
+        if (openPd == -2f) openPd = try { Prefs.airOpen } catch (e: Exception) { -1f }
+        if (stable == OPEN && n >= 3) {
+            openPd = if (openPd < 0f) pd else openPd * 0.97f + pd * 0.03f
+            val nowMs = SystemClock.uptimeMillis()
+            if (nowMs - openSaved > 8000) { openSaved = nowMs; try { Prefs.airOpen = openPd } catch (e: Exception) { } }
+        }
         val enterPd = if (openPd > 0f) (openPd * 0.26f).coerceIn(0.24f, 0.40f) else 0.34f
         val pinchNow = others >= 2 && (if (stable == PINCH) pd < enterPd * 1.6f else pd < enterPd)
         val raw = when {

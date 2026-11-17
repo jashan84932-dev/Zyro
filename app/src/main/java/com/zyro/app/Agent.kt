@@ -486,6 +486,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         var stuckSeen = false
         var lastAi = 0L
         val reflexUsed = HashMap<String, Int>()
+        val seenScreens = HashMap<String, Int>()
         val loginJob = low(job).let { it.contains("login") || it.contains("log in") || it.contains("sign in") || it.contains("लॉगिन") }
         val t00 = System.currentTimeMillis()
         planText = ""
@@ -543,6 +544,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 return
             }
             val sig = pkg + text.hashCode()
+            seenScreens[sig] = (seenScreens[sig] ?: 0) + 1
             same = if (sig == lastSig) same + 1 else 0
             lastSig = sig
             calm = if (same == 0) calm + 1 else 0
@@ -563,7 +565,12 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
             val shot: String? = if (Vision.on && !hasPwd && (same >= 2 || els.size < 4 || unlabeled * 2 > els.size)) Vision.grab() else null
             if (!Vision.on && !hinted && (same >= 3 || (els.size < 4 && step > 2))) {
                 hinted = true
-                say("बिना नाम वाले बटन देखने के लिए Settings में Agent vision चालू कर दो, तब मैं स्क्रीन की फोटो भी देख पाऊँगा।")
+                // ask for the screen-view permission right now, so the user only has to press one button
+                say("यहाँ बिना नाम वाले बटन हैं। स्क्रीन देखने की इजाज़त वाली खिड़की खुल रही है, उसमें Start now दबा दो।")
+                try { Vision.ask(ctx) } catch (e: Exception) { }
+                val waitEnd = System.currentTimeMillis() + 40_000L
+                while (!Vision.on && !cancelled && System.currentTimeMillis() < waitEnd) Thread.sleep(500)
+                if (Vision.on) { Thread.sleep(800); continue }
             }
             // reflex: obvious popups are closed instantly, no AI call needed
             val rf = els.firstOrNull { e ->
@@ -588,10 +595,13 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 if (plan.isNotBlank()) append("Your plan:\n").append(plan).append('\n')
                 if (progress.isNotBlank()) append("Your progress notes: ").append(progress).append('\n')
                 append("Current app package: ").append(pkg).append("\n")
+                appTips(pkg)?.let { append("Tips for this app: ").append(it).append('\n') }
                 append("Screen elements (id: label [tap/input]); '(no label @x,y)' means an icon at that screen position:\n").append(text.ifEmpty { "(nothing readable - maybe loading or a video; try wait, back, or tap_xy)\n" })
                 if (shot != null) append("A screenshot of the current screen is attached. Use it to see icons, video controls and anything without a label. To tap something you can see ONLY in the picture use action tap_norm with x,y between 0 and 1000 (0,0 = top-left, 1000,1000 = bottom-right).\n")
                 append("Actions done so far:\n")
                 if (history.isEmpty()) append("(none)\n") else history.takeLast(8).forEach { append("- ").append(it).append('\n') }
+                val seen = (seenScreens[sig] ?: 0)
+                if (seen >= 4) append("WARNING: you have now seen this exact screen ").append(seen).append(" times, so your current approach is NOT working. Change strategy completely: a different tab or menu, the search box, open_app again, back out to the home of the app, or tap_norm on what you see in the picture. Do not repeat any earlier action.\n")
                 if (same >= 2) append("WARNING: the screen did not change after your last actions. Do something DIFFERENT (another element, scroll, back, tap_xy on an icon).\n")
                 append("""
 Choose ONE next action and reply with ONLY JSON:
@@ -817,6 +827,22 @@ Rules:
     }
 
     /** Waits only as long as the screen needs to change (up to ~2.2 s) instead of a fixed pause. */
+    /** Short, hand-written know-how for the apps people use most, so the AI does not have to rediscover it every time. */
+    private fun appTips(pkg: String): String? = when {
+        pkg.contains("youtube") -> "Search is the magnifier at the top right; type_enter in the box; results are a vertical list, tap a video TITLE. If a 'Skip ad' / 'Skip' button shows, tap it (ads can last up to 5 s). The video plays by itself; done = the player is on screen and playing."
+        pkg.contains("hotstar") -> "After opening choose the profile if asked. Live and sports are under the Sports / Cricket / Live rows or tabs; use Search (magnifier) for a match or show name. A 'Subscribe' wall means no subscription: do not pay, tell the user. Login is by phone number + OTP: use ask_user."
+        pkg.contains("instagram") -> "Bottom bar: Home, Reels, Search, Profile. Reels are full-screen videos: swipe up (scroll_down) for the next one. Search = magnifier tab, type the name, tap the account (not the posts)."
+        pkg.contains("whatsapp") -> "Search = magnifier at the top; tap the chat; message box says 'Type a message'; send is the green arrow button (label 'Send'). Never send unless the task says to send."
+        pkg.contains("chrome") -> "The address bar is labelled 'Search or type URL' (first tap it). Use type_enter. Web page content may not be readable: use wait, scroll_find, or the screenshot (tap_norm)."
+        pkg.contains("settings") -> "Use the search icon at the top for any setting instead of scrolling menus."
+        pkg.contains("vending") -> "Play Store: search bar at the top; the green 'Install' button on the app page; 'Open' appears when done."
+        pkg.contains("maps") -> "Search box at the top ('Search here'); after choosing a place tap 'Directions' then 'Start'."
+        pkg.contains("spotify") -> "Search tab at the bottom; type the song, tap the track, then the big green Play button."
+        pkg.contains("netflix") || pkg.contains("primevideo") || pkg.contains("amazon.avod") -> "Choose the profile first; Search icon at the top; tap the title then the Play button. A login or payment wall: ask_user for the phone/OTP, never pay."
+        pkg.contains("flipkart") || pkg.contains("amazon.mShop") -> "Search box at the top; tap a product; Add to cart. Never tap Place Order / Pay unless the user clearly asked."
+        else -> null
+    }
+
     private fun settle(hands: Hands, before: String): Boolean {
         val end = System.currentTimeMillis() + 2200
         Thread.sleep(120)

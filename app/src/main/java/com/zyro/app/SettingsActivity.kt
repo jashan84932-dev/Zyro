@@ -25,10 +25,10 @@ import android.widget.Toast
 class SettingsActivity : Activity() {
 
     private companion object {
-        val BG = Color.rgb(4, 9, 22)
-        val GOLD = Color.rgb(47, 140, 255)
+        val BG = Color.rgb(4, 6, 12)
+        val GOLD = Color.rgb(255, 140, 50)
         val SOFT = Color.rgb(222, 236, 255)
-        val DIM = Color.rgb(112, 140, 190)
+        val DIM = Color.rgb(150, 150, 165)
     }
 
     private lateinit var assistant: Assistant
@@ -41,6 +41,7 @@ class SettingsActivity : Activity() {
     private lateinit var apiKey: EditText
     private lateinit var geminiKey: EditText
     private lateinit var groqKey: EditText
+    private lateinit var cerebrasKey: EditText
     private lateinit var friendName: EditText
     private lateinit var userName: EditText
     private lateinit var customVoice: CheckBox
@@ -75,7 +76,7 @@ class SettingsActivity : Activity() {
             setSingleLine(true)
             setTextColor(SOFT)
             setHintTextColor(DIM)
-            backgroundTintList = ColorStateList.valueOf(Color.argb(150, 47, 140, 255))
+            backgroundTintList = ColorStateList.valueOf(Color.argb(150, 255, 140, 50))
             inputType = if (secret) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             else InputType.TYPE_CLASS_TEXT
         }
@@ -86,8 +87,8 @@ class SettingsActivity : Activity() {
             setTextColor(if (filled) BG else GOLD)
             background = GradientDrawable().apply {
                 cornerRadius = dp(26).toFloat()
-                setColor(if (filled) GOLD else Color.argb(24, 47, 140, 255))
-                setStroke(dp(1), Color.argb(190, 47, 140, 255))
+                setColor(if (filled) GOLD else Color.argb(24, 255, 140, 50))
+                setStroke(dp(1), Color.argb(190, 255, 140, 50))
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -113,8 +114,8 @@ class SettingsActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(220))
             background = GradientDrawable().apply {
                 cornerRadius = dp(16).toFloat()
-                setColor(Color.argb(22, 47, 140, 255))
-                setStroke(dp(1), Color.argb(90, 47, 140, 255))
+                setColor(Color.argb(22, 255, 140, 50))
+                setStroke(dp(1), Color.argb(90, 255, 140, 50))
             }
         }
         logView = TextView(this).apply {
@@ -228,6 +229,9 @@ class SettingsActivity : Activity() {
         box.addView(label("Groq key (FAST free brain for the agent) - get it at console.groq.com"))
         groqKey = field("paste Groq key here (starts with gsk_)", secret = true, value = Prefs.groqKey)
         box.addView(groqKey)
+        box.addView(label("Cerebras key (optional second fast brain) - cloud.cerebras.ai"))
+        cerebrasKey = field("paste Cerebras key here (optional)", secret = true, value = Prefs.cerebrasKey)
+        box.addView(cerebrasKey)
 
         box.addView(label("ZYRO SERVER (optional, hides your key) - worker URL like wss://xxx.workers.dev"))
         proxyUrl = field("wss://your-worker.workers.dev", value = Prefs.liveProxy)
@@ -280,6 +284,7 @@ class SettingsActivity : Activity() {
     private fun saveSettings() {
         Prefs.geminiKeysRaw = geminiKey.text.toString()
         Prefs.groqKey = groqKey.text.toString()
+        Prefs.cerebrasKey = cerebrasKey.text.toString()
         Prefs.apiKey = apiKey.text.toString()
         Prefs.liveProxy = proxyUrl.text.toString()
         Prefs.liveToken = proxyToken.text.toString()

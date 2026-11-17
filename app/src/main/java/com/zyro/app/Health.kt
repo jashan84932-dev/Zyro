@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.PowerManager
 import android.provider.Settings
+import java.io.File
 
 /** "Zyro check": finds out what is switched off or broken and says exactly what to fix. */
 object Health {
@@ -41,6 +42,16 @@ object Health {
             if (r != null) good.add("AI से बात हो रही है (${ms} ms, ${if (Prefs.viaProxy) "सर्वर से" else "सीधे"})")
             else bad.add(Prefs.explainFail(Brain.lastFail, ""))
         }
+        // Live (the voice conversation) only works with a real Gemini key
+        if (Prefs.geminiKeysRaw.isBlank() && !Prefs.viaProxy) bad.add("Live बातचीत के लिए Gemini key चाहिए: Settings में डालो (Groq से Live नहीं चलता)")
+        if (Prefs.groqKey.isNotBlank()) {
+            val ms = Groq.ping("groq")
+            if (ms != null) good.add("Groq तेज़ दिमाग चालू (${ms} ms)") else bad.add("Groq key काम नहीं कर रही या लिमिट भरी है (error ${Groq.lastFail})")
+        }
+        if (Prefs.cerebrasKey.isNotBlank()) {
+            val ms = Groq.ping("cerebras")
+            if (ms != null) good.add("Cerebras दूसरा तेज़ दिमाग चालू (${ms} ms)") else bad.add("Cerebras key काम नहीं कर रही या लिमिट भरी है (error ${Groq.lastFail})")
+        }
         // the second quick call shows whether a fast reply is steady or only the first one was quick
         if (Prefs.hasGemini && bad.none { it.startsWith("Gemini") }) {
             val t1 = System.currentTimeMillis()
@@ -60,4 +71,31 @@ object Health {
         return if (bad.isEmpty()) "सब ठीक है। ${good.size} चीज़ें जाँची, कोई दिक्कत नहीं मिली।"
         else "${bad.size} चीज़ ठीक करनी है। " + bad.take(3).mapIndexed { i, s -> "${i + 1}: $s" }.joinToString("। ") + "। पूरी लिस्ट लॉग में है।"
     }
+}
+
+/** Keeps the last crash in a file so "Copy log" can show it, instead of the app just vanishing. */
+object CrashLog {
+    private var installed = false
+
+    fun install(ctx: Context) {
+        if (installed) return
+        installed = true
+        val app = ctx.applicationContext
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val sw = java.io.StringWriter()
+                e.printStackTrace(java.io.PrintWriter(sw))
+                File(app.filesDir, "crash.txt").writeText(
+                    java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date()) + " thread=" + t.name + "\n" + sw.toString().take(6000)
+                )
+            } catch (x: Throwable) { }
+            prev?.uncaughtException(t, e)
+        }
+    }
+
+    fun last(ctx: Context): String = try {
+        val f = File(ctx.applicationContext.filesDir, "crash.txt")
+        if (f.exists()) f.readText() else ""
+    } catch (e: Exception) { "" }
 }

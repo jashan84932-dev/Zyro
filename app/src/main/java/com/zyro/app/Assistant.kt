@@ -19,6 +19,8 @@ import java.util.Locale
  * minimised - until you press Stop (or say "stop listening").
  */
 class Assistant private constructor(private val app: Context) {
+    init { CrashLog.install(app) }
+
 
     companion object {
         @Volatile private var inst: Assistant? = null
@@ -79,7 +81,10 @@ class Assistant private constructor(private val app: Context) {
     fun note(line: String) = main.post { log(line) }
 
     /** Everything shown in the transcript, for the Copy log button. */
-    fun logText(): String = transcript.toString()
+    fun logText(): String {
+        val crash = CrashLog.last(app)
+        return transcript.toString() + if (crash.isNotBlank()) "\n\n===== LAST CRASH =====\n" + crash else ""
+    }
 
     @Volatile var liveActive = false
     private var liveMood = -1
