@@ -561,6 +561,31 @@ Current date and time: $now (India).
         }
 
         /** Like quickText but asks Gemini for strict JSON (used by the phone agent). */
+        /** Like describeImage but looks at several photos together. Used by the scan screen. */
+        fun describeImages(images: List<String>, prompt: String): String {
+            val parts = JSONArray().put(JSONObject().put("text", prompt))
+            for (im in images) parts.put(JSONObject().put("inlineData", JSONObject().put("mimeType", "image/jpeg").put("data", im)))
+            val body = JSONObject()
+                .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
+                .put("generationConfig", JSONObject().put("maxOutputTokens", 1024))
+            var lastCode = 0
+            for (model in (listOf(Prefs.geminiModel) + GEMINI_FALLBACKS).distinct()) {
+                val (code, text) = Prefs.gpost(model, body.toString(), 20000, 60000)
+                lastCode = code
+                if (code in 200..299) {
+                    try {
+                        val ps = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                        val sb = StringBuilder()
+                        if (ps != null) for (i in 0 until ps.length()) sb.append(ps.optJSONObject(i)?.optString("text", "") ?: "")
+                        val out = sb.toString().trim()
+                        return if (out.isNotEmpty()) out else "फोटो से मुझे कुछ समझ नहीं आया।"
+                    } catch (e: Exception) { continue }
+                }
+                if (!(code == 0 || code == 429 || code == 404 || code >= 500)) break
+            }
+            return "फोटो नहीं देख पाया (error $lastCode)। थोड़ी देर बाद फिर कोशिश करो।"
+        }
+
         /** HTTP code of the last failed quickJson/quickText attempt (0 = no network, -1 = no key, 429 = limit). */
         @Volatile var lastFail = 0
 
@@ -574,7 +599,10 @@ Current date and time: $now (India).
             if (Prefs.geminiKeysRaw.isBlank() && !Prefs.viaProxy) { lastFail = if (Groq.lastFail != 0) Groq.lastFail else -1; return null }
             val order = if (lite) listOf("gemini-2.5-flash-lite", "gemini-2.5-flash") else listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
             // each model has its own free-limit bucket, so extra models = more headroom
+            val startedAt = System.currentTimeMillis()
+            // a request must not hang for minutes: after ~35 s of trying models, give up on Gemini
             for (model in order + listOf("gemini-flash-latest", "gemini-flash-lite-latest")) {
+                if (System.currentTimeMillis() - startedAt > 35000) break
                 try {
                     val body = JSONObject()
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)).also { ps -> if (imageB64 != null) ps.put(JSONObject().put("inlineData", JSONObject().put("mimeType", "image/jpeg").put("data", imageB64))) })))
@@ -594,6 +622,10 @@ Current date and time: $now (India).
                     if (!out.isNullOrBlank()) { lastFail = 0; return out }
                 } catch (e: Exception) {
                 }
+            }
+            // the picture could not be sent (limit or slow net): still answer from the screen text with the fast text AI
+            if (imageB64 != null && Groq.ready) {
+                Groq.chat(prompt + "\n(The screenshot is not available this time; decide from the screen text above.)", maxTokens, 12000, true)?.let { lastFail = 0; return it }
             }
             return null
         }

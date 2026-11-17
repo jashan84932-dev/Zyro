@@ -39,11 +39,13 @@ class CameraActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         val f = File(cacheDir, "shot.jpg")
         if (resultCode == RESULT_OK && f.exists() && f.length() > 0) {
-            val app = applicationContext
-            Thread {
-                val b64 = try { encode(f) } catch (e: Exception) { null }
-                if (b64 != null) Assistant.get(app).describePhoto(b64)
-            }.start()
+            val b64 = try { encode(f) } catch (e: Exception) { null }
+            if (b64 != null) {
+                Scan.begin(b64)
+                try { startActivity(Intent(this, ScanActivity::class.java)) } catch (e: Exception) {
+                    Assistant.get(applicationContext).describePhoto(b64)
+                }
+            }
         }
         finish()
     }

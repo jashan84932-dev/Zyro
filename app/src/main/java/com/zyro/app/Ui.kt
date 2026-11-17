@@ -107,7 +107,7 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
             val pulse = 0.85f + 0.15f * sin(t * 3.2f)
             glow.shader = RadialGradient(
                 cx, cy, r * 1.55f,
-                intArrayOf(Color.argb((150 * lit * pulse).toInt(), 47, 140, 255), Color.argb(0, 47, 140, 255)),
+                intArrayOf(Color.argb((150 * lit * pulse).toInt(), 255, 130, 40), Color.argb(0, 255, 110, 30)),
                 floatArrayOf(0.55f, 1f), Shader.TileMode.CLAMP
             )
             c.drawCircle(cx, cy, r * 1.55f, glow)
@@ -117,12 +117,12 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
         val base = 26 + (70 * lit).toInt() + (30 * pressedAmt).toInt()
         fill.shader = RadialGradient(
             cx, cy - r * 0.35f, r * 1.25f,
-            intArrayOf(Color.argb(base + 40, 70, 150, 255), Color.argb(base, 14, 40, 110), Color.argb(base / 2, 6, 16, 50)),
+            intArrayOf(Color.argb(base + 40, 255, 150, 70), Color.argb(base, 70, 40, 30), Color.argb(base / 2, 14, 12, 18)),
             floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP
         )
         c.drawCircle(cx, cy, r, fill)
         ring.strokeWidth = 1.3f * d
-        ring.color = Color.argb(120 + (100 * lit).toInt(), 110, 185, 255)
+        ring.color = Color.argb(120 + (100 * lit).toInt(), 255, 170, 90)
         c.drawCircle(cx, cy, r, ring)
 
         // icon

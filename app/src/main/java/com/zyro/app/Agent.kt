@@ -872,6 +872,19 @@ Rules:
                 return hands.tap(r.centerX(), r.centerY())
             }
         } catch (e: Exception) {}
+        // the keys have no readable names: the Enter/Search key sits at the right end of the keyboard's bottom row
+        try {
+            for (w in svc.windows) {
+                if (w.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue
+                val r = Rect()
+                w.getBoundsInScreen(r)
+                if (r.width() > 200 && r.height() > 200) {
+                    val x = r.right - (r.width() * 0.07f).toInt()
+                    val y = r.bottom - (r.height() * 0.11f).toInt()
+                    return hands.tap(x, y)
+                }
+            }
+        } catch (e: Exception) {}
         return "Enter key not available; tap the search suggestion or the search button instead."
     }
 }

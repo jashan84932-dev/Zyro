@@ -31,7 +31,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         assistant = Assistant.get(this)
-        val bg = Color.rgb(3, 6, 16)
+        val bg = Color.rgb(3, 5, 10)
         window.statusBarColor = bg
         window.navigationBarColor = bg
 

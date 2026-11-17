@@ -151,6 +151,20 @@ object Extras {
             return readScreenAloud(hands)
         }
 
+        // ----- a question about the photo just scanned ("is photo me doosri cheez ka daam kya hai") -----
+        if (Scan.fresh() &&
+            any("photo", "फोटो", "scan", "स्कैन", "tasveer", "तस्वीर", "image") &&
+            any("pichhli", "पिछली", "pichli", "last", "isme", "इसमें", "usme", "उसमें", "is photo", "इस फोटो", "us photo", "उस फोटो", "abhi wali", "अभी वाली") &&
+            !any("kheencho", "खींचो", "lo ", "kholo")
+        ) {
+            val q = raw
+            Thread {
+                val a = Scan.follow(q)
+                Scan.deliver(ctx, a)
+            }.start()
+            return "देख रहा हूँ।"
+        }
+
         // ----- camera: what is this? -----
         if ((any("camera", "कैमरा", "कैमरे") && any("dekh", "देख", "batao", "बताओ", "kya hai", "क्या है", "pehchan", "पहचान", "scan", "स्कैन")) ||
             any("ye kya hai", "yeh kya hai", "ये क्या है", "यह क्या है", "isko dekho", "इसे देखो", "इसको देखो",
@@ -533,7 +547,7 @@ object Extras {
     // ------------------------------------------------------------------ camera
 
     private fun startCamera(ctx: Context, hands: Hands): String {
-        if (!Prefs.hasGemini) return "फोटो देखने के लिए Gemini key चाहिए। Zyro की settings में डाल दो।"
+        if (!Scan.hasVisionKey()) return "फोटो देखने के लिए Gemini key चाहिए। Groq फोटो नहीं देखता। Zyro की settings में Gemini key डाल दो।"
         return try {
             hands.openActivity(Intent(ctx, CameraActivity::class.java))
             "कैमरा खुल रहा है। फोटो खींचकर OK दबा दो, फिर मैं बताऊँगा।"
