@@ -85,6 +85,12 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
+            android:name=".ScanActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
+
+        <activity
             android:name=".ReportActivity"
             android:exported="false"
             android:excludeFromRecents="true"
