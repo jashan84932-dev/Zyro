@@ -487,6 +487,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         var lastAi = 0L
         val reflexUsed = HashMap<String, Int>()
         val seenScreens = HashMap<String, Int>()
+        val missCount = HashMap<String, Int>()
         val loginJob = low(job).let { it.contains("login") || it.contains("log in") || it.contains("sign in") || it.contains("लॉगिन") }
         val t00 = System.currentTimeMillis()
         planText = ""
@@ -596,6 +597,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
                 if (progress.isNotBlank()) append("Your progress notes: ").append(progress).append('\n')
                 append("Current app package: ").append(pkg).append("\n")
                 appTips(pkg)?.let { append("Tips for this app: ").append(it).append('\n') }
+                append(Know.forTask(job, pkg))
                 append("Screen elements (id: label [tap/input]); '(no label @x,y)' means an icon at that screen position:\n").append(text.ifEmpty { "(nothing readable - maybe loading or a video; try wait, back, or tap_xy)\n" })
                 if (shot != null) append("A screenshot of the current screen is attached. Use it to see icons, video controls and anything without a label. To tap something you can see ONLY in the picture use action tap_norm with x,y between 0 and 1000 (0,0 = top-left, 1000,1000 = bottom-right).\n")
                 append("Actions done so far:\n")
@@ -752,13 +754,44 @@ Rules:
                         val o2 = observe(hands) ?: break
                         if (o2.first + o2.third.hashCode() == s0) break // end of the list
                     }
+                    // buttons under a video (Like, Share, Download...) sit in a row that scrolls SIDEWAYS: swipe that row
+                    if (!found && target.isNotEmpty() && !cancelled) {
+                        val sw = ctx.resources.displayMetrics.widthPixels
+                        val anchors = listOf("share", "like", "remix", "save", "शेयर", "लाइक", "सेव", "clip", "thanks")
+                        var o = observe(hands)
+                        val anchor = o?.second?.firstOrNull { e -> e.r.width() < sw / 2 && anchors.any { a -> low(e.label).startsWith(a) } }
+                        if (anchor != null) {
+                            val y = anchor.r.centerY()
+                            var k = 0
+                            while (k < 4 && !cancelled && !found) {
+                                val s0 = (o?.first ?: "") + (o?.third?.hashCode() ?: 0)
+                                hands.swipe((sw * 0.88f).toInt(), y, (sw * 0.12f).toInt(), y, 320)
+                                settle(hands, s0)
+                                o = observe(hands) ?: break
+                                if (o.second.any { e -> low(e.label).contains(target) }) found = true
+                                k++
+                                tries++
+                            }
+                        }
+                    }
                     history.add("scroll_find \"$txt\": " + if (found) "FOUND on screen after $tries scrolls, tap it now" else "not found after $tries scrolls (end of list reached or it is not here)")
                     recordable = false
+                    // the same thing searched again and again = it is simply not there: stop honestly instead of looping
+                    if (!found && target.isNotEmpty()) {
+                        val n = (missCount[target] ?: 0) + 1
+                        missCount[target] = n
+                        if (n == 2) history.add("WARNING: \"$txt\" was not found twice. It may not exist for this item (some videos or apps do not allow it). Do NOT search for it again: use action done/fail and tell the user honestly what you saw.")
+                        if (n >= 4) {
+                            say("मुझे यहाँ \"$txt\" का बटन मिल ही नहीं रहा। शायद इस वीडियो या ऐप में यह सुविधा बंद है, कुछ वीडियो डाउनलोड नहीं होने देते। इसलिए मैं रुक रहा हूँ।")
+                            return
+                        }
+                    }
                 }
                 "tap_norm" -> {
                     val nx = j.optDouble("x", -1.0)
                     val ny = j.optDouble("y", -1.0)
                     if (nx < 0 || ny < 0) history.add("tap_norm needs x and y between 0 and 1000")
+                    else if (nx < 5 && ny < 5) history.add("tap_norm 0,0 is not a real place on screen; look at the screenshot again and give real coordinates, or use another action")
                     else {
                         val (sw, sh) = Vision.realSize(ctx)
                         val px = (nx / 1000.0 * sw).toInt().coerceIn(0, sw - 1)
@@ -829,7 +862,7 @@ Rules:
     /** Waits only as long as the screen needs to change (up to ~2.2 s) instead of a fixed pause. */
     /** Short, hand-written know-how for the apps people use most, so the AI does not have to rediscover it every time. */
     private fun appTips(pkg: String): String? = when {
-        pkg.contains("youtube") -> "Search is the magnifier at the top right; type_enter in the box; results are a vertical list, tap a video TITLE. If a 'Skip ad' / 'Skip' button shows, tap it (ads can last up to 5 s). The video plays by itself; done = the player is on screen and playing."
+        pkg.contains("youtube") -> "DOWNLOAD: most videos can be downloaded in the free app. The Download button sits in the row of buttons UNDER the video (Like, Dislike, Share, Remix, Download...); that row scrolls sideways and scroll_find swipes it for you. Tap Download, pick a quality if asked (the default is fine), and it is done when the button shows 'Downloaded' or a tick. A few videos do not allow downloading and then have no button anywhere: only then tell the user honestly. The player must be NOT full screen and the video must be open (not just the search list). Search is the magnifier at the top right; type_enter in the box; results are a vertical list, tap a video TITLE. If a 'Skip ad' / 'Skip' button shows, tap it (ads can last up to 5 s). The video plays by itself; done = the player is on screen and playing."
         pkg.contains("hotstar") -> "After opening choose the profile if asked. Live and sports are under the Sports / Cricket / Live rows or tabs; use Search (magnifier) for a match or show name. A 'Subscribe' wall means no subscription: do not pay, tell the user. Login is by phone number + OTP: use ask_user."
         pkg.contains("instagram") -> "Bottom bar: Home, Reels, Search, Profile. Reels are full-screen videos: swipe up (scroll_down) for the next one. Search = magnifier tab, type the name, tap the account (not the posts)."
         pkg.contains("whatsapp") -> "Search = magnifier at the top; tap the chat; message box says 'Type a message'; send is the green arrow button (label 'Send'). Never send unless the task says to send."

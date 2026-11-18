@@ -353,7 +353,7 @@ object Live {
                 }
             }
             sc.optJSONObject("inputTranscription")?.optString("text")?.let { if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis() } }
-            sc.optJSONObject("outputTranscription")?.optString("text")?.let { if (it.isNotEmpty()) outText.append(it) }
+            sc.optJSONObject("outputTranscription")?.optString("text")?.let { if (it.isNotEmpty()) outText.append(it.replace(Regex("<no speech>|\\{pause\\}|<noise>"), "")) }
             if (sc.optBoolean("turnComplete", false)) {
                 val c = appCtx
                 if (c != null) {

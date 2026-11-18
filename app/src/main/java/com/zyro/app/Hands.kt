@@ -388,6 +388,45 @@ class Hands(private val app: Context) {
         listOf("husband", "pati", "पति")
     )
 
+    /** Hindi letters to rough English letters, so a spoken Hindi name can be matched with a contact saved in English (and back). */
+    private fun translit(t: String): String {
+        val cons = mapOf('क' to "k", 'ख' to "kh", 'ग' to "g", 'घ' to "gh", 'च' to "ch", 'छ' to "chh", 'ज' to "j", 'झ' to "jh",
+            'ट' to "t", 'ठ' to "th", 'ड' to "d", 'ढ' to "dh", 'ण' to "n", 'त' to "t", 'थ' to "th", 'द' to "d", 'ध' to "dh", 'न' to "n",
+            'प' to "p", 'फ' to "f", 'ब' to "b", 'भ' to "bh", 'म' to "m", 'य' to "y", 'र' to "r", 'ल' to "l", 'व' to "v", 'श' to "sh",
+            'ष' to "sh", 'स' to "s", 'ह' to "h")
+        val vow = mapOf('अ' to "a", 'आ' to "a", 'इ' to "i", 'ई' to "i", 'उ' to "u", 'ऊ' to "u", 'ए' to "e", 'ऐ' to "ai", 'ओ' to "o", 'औ' to "au", 'ऑ' to "o")
+        val mat = mapOf('ा' to "a", 'ि' to "i", 'ी' to "i", 'ु' to "u", 'ू' to "u", 'े' to "e", 'ै' to "ai", 'ो' to "o", 'ौ' to "au", 'ॉ' to "o", 'ं' to "n", 'ँ' to "n")
+        val u = t.replace("\u093c", "")
+        val sb = StringBuilder()
+        var i = 0
+        while (i < u.length) {
+            val ch = u[i]
+            val c = cons[ch]
+            if (c != null) {
+                sb.append(c)
+                val nx = u.getOrNull(i + 1)
+                val end = nx == null || !(nx in 'ऀ'..'ॿ')
+                if (nx == '्') { i += 2; continue }
+                if (nx != null && mat.containsKey(nx)) { sb.append(mat[nx]); i += 2; continue }
+                // inherent "a", dropped at the end of a word
+                if (!end) sb.append("a")
+            } else if (vow.containsKey(ch)) sb.append(vow[ch])
+            else if (ch == '़' || ch == '्') { }
+            else sb.append(ch)
+            i++
+        }
+        return sb.toString()
+    }
+
+    /** A sound key: "Lucky", "लकी" and "Lakki" all become "lk". */
+    private fun phon(t: String): String {
+        var x = translit(t.lowercase()).replace(Regex("[^a-z]"), "")
+        x = x.replace("ch", "C").replace("sh", "S").replace("kh", "k").replace("gh", "g").replace("ph", "f").replace("th", "t").replace("dh", "d").replace("bh", "b").replace("jh", "j")
+        x = x.replace("c", "k").replace("q", "k").replace("w", "v").replace("z", "j").replace("x", "ks")
+        x = x.replace(Regex("[aeiouyh]"), "")
+        return x.replace(Regex("(.)\\1+"), "$1")
+    }
+
     /** Best matching contact for a spoken name: knows family words in both scripts, prefers exact / starred / often-called / mobile numbers. */
     fun findContact(name: String): Pair<String, String>? {
         if (name.isBlank() || !hasContactsPermission()) return null
@@ -436,6 +475,35 @@ class Hands(private val app: Context) {
             // fall back to the simple search below
         }
         if (bestName != null && bestNum != null) return Pair(bestName!!, bestNum!!)
+        // sound-alike pass: "लकी" (Hindi letters) finds a contact saved as "Lucky" and the other way round
+        try {
+            val want = phon(name)
+            if (want.length >= 2) {
+                var pn: String? = null
+                var pnum: String? = null
+                var pscore = 0
+                ctx.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER, "starred", "times_contacted"),
+                    null, null, null
+                )?.use {
+                    while (it.moveToNext()) {
+                        val dn = it.getString(0) ?: continue
+                        val num = it.getString(1) ?: continue
+                        val words = dn.split(Regex("\\s+")).filter { w -> w.isNotEmpty() }
+                        var sc = 0
+                        if (phon(dn) == want) sc = 90
+                        else if (words.any { w -> phon(w) == want }) sc = 70
+                        else if (want.length >= 3 && words.any { w -> phon(w).startsWith(want) }) sc = 50
+                        if (sc == 0) continue
+                        if (it.getInt(2) == 1) sc += 10
+                        sc += minOf(it.getInt(3), 50) / 5
+                        if (sc > pscore) { pscore = sc; pn = dn; pnum = num }
+                    }
+                }
+                if (pn != null && pnum != null) return Pair(pn!!, pnum!!)
+            }
+        } catch (e: Exception) { }
         val cur = ctx.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
             arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),

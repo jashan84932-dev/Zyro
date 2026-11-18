@@ -606,12 +606,12 @@ Current date and time: $now (India).
             val startedAt = System.currentTimeMillis()
             // a request must not hang for minutes: after ~35 s of trying models, give up on Gemini
             for (model in order + listOf("gemini-flash-latest", "gemini-flash-lite-latest")) {
-                if (System.currentTimeMillis() - startedAt > 35000) break
+                if (System.currentTimeMillis() - startedAt > (if (imageB64 != null) 24000 else 35000)) break
                 try {
                     val body = JSONObject()
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", prompt)).also { ps -> if (imageB64 != null) ps.put(JSONObject().put("inlineData", JSONObject().put("mimeType", "image/jpeg").put("data", imageB64))) })))
                         .put("generationConfig", JSONObject().put("maxOutputTokens", maxTokens).put("responseMimeType", "application/json").put("temperature", 0.2).put("thinkingConfig", JSONObject().put("thinkingBudget", 0)))
-                    val (code, text) = Prefs.gpost(model, body.toString(), 8000, timeoutMs)
+                    val (code, text) = Prefs.gpost(model, body.toString(), 8000, if (imageB64 != null) minOf(timeoutMs, 16000) else timeoutMs)
                     if (code !in 200..299) {
                         if (code != 404 || lastFail == 0) lastFail = code
                         if (code == 401 || code == 403) return null
