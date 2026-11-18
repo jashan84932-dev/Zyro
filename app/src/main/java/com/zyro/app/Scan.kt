@@ -256,7 +256,10 @@ class ScanView(ctx: Context) : View(ctx) {
 
     fun setImage(b: Bitmap?, n: Int) { bmp = b; count = n; done = false; invalidate() }
     fun rescan() { done = false }
-    fun finishScan() { done = true; doneAt = SystemClock.uptimeMillis() }
+    fun finishScan() {
+        done = true; doneAt = SystemClock.uptimeMillis()
+        try { performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (e: Exception) { }
+    }
 
     override fun onDraw(c: Canvas) {
         c.drawColor(Color.rgb(3, 9, 20))
@@ -317,7 +320,40 @@ class ScanView(ctx: Context) : View(ctx) {
                 c.drawRect(dst, p)
             }
         }
+        // reticle that hops between points while the scan runs: looks like it is picking out details
+        if (!done) {
+            val hop = (t / 900L).toInt()
+            val hr = java.util.Random(hop * 7919L + 3)
+            val rx = dst.left + (0.15f + 0.7f * hr.nextFloat()) * dst.width()
+            val ry = dst.top + (0.15f + 0.7f * hr.nextFloat()) * dst.height()
+            val hp = ((t % 900L) / 900f)
+            val rs = (34f - 16f * minOf(1f, hp * 3f)) * dd
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 1.8f * dd
+            p.color = Color.argb((200 * (1f - hp * hp)).toInt(), 255, 170, 80)
+            c.drawRect(rx - rs, ry - rs, rx + rs, ry + rs, p)
+            c.drawLine(rx - rs * 1.5f, ry, rx - rs * 0.6f, ry, p)
+            c.drawLine(rx + rs * 0.6f, ry, rx + rs * 1.5f, ry, p)
+            c.drawLine(rx, ry - rs * 1.5f, rx, ry - rs * 0.6f, p)
+            c.drawLine(rx, ry + rs * 0.6f, rx, ry + rs * 1.5f, p)
+            p.style = Paint.Style.FILL
+        }
         c.restore()
+
+        // completion: two rings leave the middle of the picture
+        if (done) {
+            val age = (now - doneAt) / 1000f
+            for (k in 0..1) {
+                val f = ((age - k * 0.18f) / 0.9f)
+                if (f in 0f..1f) {
+                    p.style = Paint.Style.STROKE
+                    p.strokeWidth = (4f * (1f - f) + 1f) * dd
+                    p.color = Color.argb(((1f - f) * (1f - f) * 220).toInt(), 150, 230, 255)
+                    c.drawCircle(dst.centerX(), dst.centerY(), f * maxOf(dst.width(), dst.height()) * 0.7f, p)
+                    p.style = Paint.Style.FILL
+                }
+            }
+        }
 
         // corner brackets
         val pulse = 0.5f + 0.5f * Math.sin(t / 380.0).toFloat()
@@ -326,7 +362,8 @@ class ScanView(ctx: Context) : View(ctx) {
         p.strokeCap = Paint.Cap.ROUND
         p.color = if (done) Color.argb(255, 150, 230, 255) else Color.argb((170 + 85 * pulse).toInt(), 70, 160, 255)
         val len = 30 * dd
-        val o = 6 * dd
+        val snap = if (done) 1f - ((now - doneAt) / 420f).coerceIn(0f, 1f) else 0f
+        val o = (6 + 16 * snap * snap) * dd
         val x1 = dst.left - o; val x2 = dst.right + o; val y1 = dst.top - o; val y2 = dst.bottom + o
         c.drawLine(x1, y1, x1 + len, y1, p); c.drawLine(x1, y1, x1, y1 + len, p)
         c.drawLine(x2, y1, x2 - len, y1, p); c.drawLine(x2, y1, x2, y1 + len, p)

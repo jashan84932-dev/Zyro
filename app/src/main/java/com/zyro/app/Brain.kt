@@ -165,7 +165,9 @@ class Brain(private val hands: Hands) {
         val models = (listOf(Prefs.geminiModel) + GEMINI_FALLBACKS).distinct()
         var lastCode = 0
         for (model in models) {
-            val (code, text) = Prefs.gpost(model, body.toString(), 20000, 60000)
+            val sb = JSONObject(body.toString())
+            if (model.contains("2.5") && !model.contains("pro")) sb.getJSONObject("generationConfig").put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+            val (code, text) = Prefs.gpost(model, sb.toString(), 20000, 60000)
             lastCode = code
             if (code in 200..299) {
                 try {
@@ -570,7 +572,9 @@ Current date and time: $now (India).
                 .put("generationConfig", JSONObject().put("maxOutputTokens", 1024))
             var lastCode = 0
             for (model in (listOf(Prefs.geminiModel) + GEMINI_FALLBACKS).distinct()) {
-                val (code, text) = Prefs.gpost(model, body.toString(), 20000, 60000)
+                val sb = JSONObject(body.toString())
+                if (model.contains("2.5") && !model.contains("pro")) sb.getJSONObject("generationConfig").put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+                val (code, text) = Prefs.gpost(model, sb.toString(), 20000, 60000)
                 lastCode = code
                 if (code in 200..299) {
                     try {

@@ -74,6 +74,7 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
     private var last = 0L
     private var lit = 0f
     private var pressedAmt = 0f
+    private var ripple = 1f
 
     init {
         isClickable = true
@@ -82,7 +83,7 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
 
     override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
         when (e.actionMasked) {
-            android.view.MotionEvent.ACTION_DOWN -> { pressedAmt = 1f; invalidate() }
+            android.view.MotionEvent.ACTION_DOWN -> { pressedAmt = 1f; ripple = 0f; try { performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY) } catch (x: Exception) { }; invalidate() }
             android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> { pressedAmt = 0f; invalidate() }
         }
         return super.onTouchEvent(e)
@@ -101,6 +102,19 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
         t += dt
         val on = isOn()
         lit += ((if (on) 1f else 0f) - lit) * (1f - Math.exp((-dt * 8f).toDouble()).toFloat())
+
+        // the whole button dips slightly while pressed
+        c.save()
+        val sc = 1f - 0.07f * pressedAmt
+        c.scale(sc, sc, cx, cy)
+
+        // tap ripple: a ring that leaves the button
+        if (ripple < 1f) {
+            ripple = minOf(1f, ripple + dt / 0.55f)
+            ring.strokeWidth = (3f * (1f - ripple) + 0.8f) * d
+            ring.color = Color.argb(((1f - ripple) * (1f - ripple) * 210).toInt(), 255, 170, 90)
+            c.drawCircle(cx, cy, r * (1f + ripple * 0.75f), ring)
+        }
 
         // soft outer glow when active
         if (lit > 0.02f) {
@@ -124,6 +138,19 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
         ring.strokeWidth = 1.3f * d
         ring.color = Color.argb(120 + (100 * lit).toInt(), 255, 170, 90)
         c.drawCircle(cx, cy, r, ring)
+
+        // a bright spark circles the rim while active
+        if (lit > 0.02f) {
+            ring.strokeWidth = 2.6f * d
+            ring.strokeCap = Paint.Cap.ROUND
+            box.set(cx - r, cy - r, cx + r, cy + r)
+            val a0 = (t * 160f) % 360f
+            ring.color = Color.argb((235 * lit).toInt(), 255, 235, 200)
+            c.drawArc(box, a0, 34f, false, ring)
+            ring.color = Color.argb((90 * lit).toInt(), 255, 180, 100)
+            c.drawArc(box, a0 - 40f, 40f, false, ring)
+            ring.strokeCap = Paint.Cap.BUTT
+        }
 
         // icon
         val s = r * 0.46f
@@ -170,7 +197,8 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
                 c.drawPath(path, ink)
             }
         }
+        c.restore()
         // keep animating (cheap: only a few small views)
-        if (on || lit > 0.02f) postInvalidateOnAnimation()
+        if (on || lit > 0.02f || ripple < 1f) postInvalidateOnAnimation()
     }
 }

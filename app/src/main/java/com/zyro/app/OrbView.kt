@@ -16,6 +16,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.view.MotionEvent
 import android.view.View
 import java.util.Random
 import kotlin.math.abs
@@ -86,6 +87,31 @@ class OrbView(context: Context) : View(context), SensorEventListener {
     private var thinNext = 0f
 
     private val bokeh = FloatArray(110 * 5)
+
+    // plasma-globe touch: put a finger on the sphere and the lightning reaches out to it
+    // voice pulses: a small ring ripples out on each syllable-like jump in the mic level
+    private val pulseAge = FloatArray(4) { 2f }
+    private var pulseNext = 0
+    private var prevLevel = 0f
+    private var pulseCool = 0f
+
+    private var touching = false
+    private var fx = 0f
+    private var fy = 0f
+    private var touchAmt = 0f
+    private var boltClock = 0f
+    private var buzzClock = 0f
+    private val boltA = Path()
+    private val boltB = Path()
+    private val boltC = Path()
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> { touching = true; fx = e.x; fy = e.y }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> touching = false
+        }
+        return super.onTouchEvent(e)
+    }
 
     // shockwave rings that leave the sphere whenever Zyro changes what it is doing
     private val shockAge = FloatArray(3) { 2f }
@@ -558,6 +584,55 @@ class OrbView(context: Context) : View(context), SensorEventListener {
             c.drawCircle(nx, ny, 5f * k, addP)
             addP.color = Color.argb((230 * pulse).toInt(), 255, 255, 255)
             c.drawCircle(nx, ny, 2f * k, addP)
+        }
+
+        // voice pulses
+        pulseCool -= dt
+        if (mode == LISTEN && level - prevLevel > 0.22f && pulseCool <= 0f) {
+            pulseAge[pulseNext] = 0f
+            pulseNext = (pulseNext + 1) % pulseAge.size
+            pulseCool = 0.16f
+        }
+        prevLevel = lerp(prevLevel, level, 1f - exp(-dt * 12f))
+        for (i in pulseAge.indices) {
+            if (pulseAge[i] >= 1f) continue
+            pulseAge[i] += dt / 0.7f
+            val f = pulseAge[i].coerceIn(0f, 1f)
+            strokeAdd.strokeWidth = (3.5f * (1f - f) + 0.8f) * k
+            strokeAdd.color = Color.argb(((1f - f) * 150).toInt(), 130, 225, 255)
+            c.drawCircle(cx, cy, R * (1.02f + f * 0.45f), strokeAdd)
+        }
+
+        // touch bolts: the sphere's energy runs to the finger, brighter the closer it is
+        touchAmt = lerp(touchAmt, if (touching) 1f else 0f, 1f - exp(-dt * (if (touching) 14f else 6f)))
+        if (touchAmt > 0.02f) {
+            boltClock -= dt
+            if (boltClock <= 0f) {
+                boltClock = 0.045f
+                boltA.reset(); boltB.reset(); boltC.reset()
+                val d = hypot(fx - cx, fy - cy).coerceAtLeast(1f)
+                val sx = cx + (fx - cx) / d * min(d, R * 0.25f)
+                val sy = cy + (fy - cy) / d * min(d, R * 0.25f)
+                walk(boltA, sx, sy, fx, fy, R * 0.16f, 14)
+                walk(boltB, sx, sy, fx, fy, R * 0.26f, 12)
+                walk(boltC, cx, cy, fx + (rnd.nextFloat() - 0.5f) * R * 0.3f, fy + (rnd.nextFloat() - 0.5f) * R * 0.3f, R * 0.22f, 12)
+            }
+            buzzClock -= dt
+            if (touching && buzzClock <= 0f) {
+                buzzClock = 0.11f
+                try { performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY) } catch (e: Exception) { }
+            }
+            vein(c, boltC, 0.9f, 0.45f * touchAmt)
+            vein(c, boltB, 1.1f, 0.7f * touchAmt)
+            vein(c, boltA, 1.8f, touchAmt)
+            // glow under the finger
+            strokeAdd.strokeWidth = 26f * k
+            strokeAdd.color = Color.argb((50 * touchAmt).toInt(), 120, 215, 255)
+            c.drawCircle(fx, fy, 22f * k, strokeAdd)
+            strokeAdd.strokeWidth = 8f * k
+            strokeAdd.color = Color.argb((150 * touchAmt).toInt(), 235, 250, 255)
+            c.drawCircle(fx, fy, 10f * k, strokeAdd)
+            energy = (energy + 0.25f * touchAmt).coerceAtMost(1f)
         }
 
         // shockwave rings
