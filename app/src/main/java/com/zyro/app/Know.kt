@@ -49,6 +49,21 @@ object Know {
         sb.append(CORE).append('\n')
         for ((keys, text) in WORDS) if (keys.any { t.contains(it) }) sb.append(text).append('\n')
         for ((keys, text) in HOWTO) if (keys.any { t.contains(it) }) sb.append(text).append('\n')
+        val app = when {
+            pkg.contains("facebook.katana") || pkg.contains("facebook.lite") -> "Facebook: bottom/top tabs Home, Reels/Video, Friends, Marketplace, Notifications, Menu. Search = magnifier at the top. A post's Like/Comment/Share are under it."
+            pkg.contains("telegram") -> "Telegram: search = magnifier at the top; chats list; message box 'Message'; send arrow on the right. Channels have no message box."
+            pkg.contains("snapchat") -> "Snapchat opens on the camera; swipe right for chats, left for stories. The big circle is the shutter."
+            pkg.contains("gm") && pkg.contains("google.android") -> "Gmail: search bar at the top ('Search in mail'); Compose = the pencil button bottom-right; the To field, Subject, then body; Send = paper-plane at the top right (only if the user asked to send)."
+            pkg.contains("zomato") || pkg.contains("swiggy") -> "Food apps: search the dish or restaurant at the top, open the restaurant, ADD on the item, then View Cart. NEVER tap Place Order or Pay: tell the user the cart is ready."
+            pkg.contains("ola") || pkg.contains("uber") || pkg.contains("rapido") -> "Ride apps: set Drop (where to), pick the ride type, then stop before Confirm/Book unless the user clearly said to book."
+            pkg.contains("dialer") || pkg.contains("contacts") || pkg.contains("incallui") -> "Phone: keypad icon shows the dial pad; green phone button calls; contacts are searched with the box at the top."
+            pkg.contains("deskclock") || pkg.contains("clock") -> "Clock: tabs Alarm, Clock, Timer, Stopwatch at the bottom; + adds an alarm; set the time, then OK/Save."
+            pkg.contains("calculator") -> "Calculator: tap the number and operator keys one by one, = for the result; read the result from the top."
+            pkg.contains("photos") || pkg.contains("gallery") -> "Gallery: photos are listed newest first; tap one to open; the share icon is at the bottom; trash icon deletes (ask first)."
+            pkg.contains("camera") -> "Camera: the big round button takes the photo; switch cameras with the circular-arrows icon; modes (Photo, Video, Portrait) swipe along the bottom."
+            else -> null
+        }
+        if (app != null) sb.append(app).append('\n')
         if (pkg.contains("instagram") && has(t, "reel", "रील")) sb.append("Open Reels from the bottom bar (film/clapper icon), not from Home.\n")
         return sb.toString().take(2400)
     }

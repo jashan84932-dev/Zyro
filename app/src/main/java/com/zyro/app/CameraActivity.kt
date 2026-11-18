@@ -54,7 +54,7 @@ class CameraActivity : Activity() {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(f.absolutePath, bounds)
         var sample = 1
-        while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 1600) sample *= 2
+        while (bounds.outWidth / sample > 2600 || bounds.outHeight / sample > 2600) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         var bmp = BitmapFactory.decodeFile(f.absolutePath, opts) ?: throw IllegalStateException("no image")
         val rot = when (ExifInterface(f.absolutePath).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1)) {
@@ -67,8 +67,14 @@ class CameraActivity : Activity() {
             val m = Matrix().apply { postRotate(rot) }
             bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true)
         }
+        // keep small print readable: up to 2048 px on the long side, good quality
+        val big = maxOf(bmp.width, bmp.height)
+        if (big > 2048) {
+            val f = 2048f / big
+            bmp = Bitmap.createScaledBitmap(bmp, (bmp.width * f).toInt(), (bmp.height * f).toInt(), true)
+        }
         val out = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, 80, out)
+        bmp.compress(Bitmap.CompressFormat.JPEG, 88, out)
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 }

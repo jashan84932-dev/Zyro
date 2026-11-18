@@ -674,7 +674,7 @@ Rules:
                 }
                 "fail" -> {
                     failPush++
-                    if (failPush <= 3) {
+                    if (failPush <= 3 && missCount.values.none { it >= 2 }) {
                         history.add("You said fail (\"${sayText.take(60)}\") but giving up is not allowed yet. Try another route: scroll, search, other tab/menu, back, reopen the app, tap_xy.")
                     } else {
                         val r = askUser((sayText.ifBlank { "यहाँ अटक गया हूँ।" }) + " क्या करूँ?")

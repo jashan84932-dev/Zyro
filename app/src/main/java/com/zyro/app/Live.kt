@@ -60,6 +60,14 @@ object Live {
         appCtx = ctx.applicationContext
     }
 
+    /** The speech recogniser writes things like "<!-- Silence -->" or "No speech." for quiet moments; they are not words. */
+    private fun noise(t: String): String {
+        var x = t.replace(Regex("<!--.*?-->|<no speech>|\\{pause\\}|<noise>|<silence>", RegexOption.IGNORE_CASE), "")
+        val bare = x.trim().trim('.', '!', '?').lowercase()
+        if (bare == "no speech" || bare == "silence" || bare == "no speech detected") return ""
+        return x
+    }
+
     private fun s(x: String) = Local.strip(x)
 
     fun handle(hands: Hands, t: String, words: List<String>, raw: String): String? {
@@ -262,6 +270,7 @@ object Live {
         persona.append("phone_command also runs ALL of these when the user asks, so pass their words straight through: WhatsApp and SMS, calls, reading messages, notifications digest, auto-reply, focus mode, photos and camera questions ('ye kya hai'), screen questions, hologram mode, air control (hand-gesture cursor), clipboard (read, summarise, translate, paste, put on GitHub), GitHub repo creation and file upload, building an Android app from an idea, teaching a routine ('seekho') and replaying it, fever log, world news report, making and sharing pictures, personalities, smart TV, timers, alarms, music, safety and find-my-phone. ")
         persona.append("If a tool result asks the user a yes/no question, ask it aloud and then call phone_command again with their answer ('haan' or 'nahi'). Translation, summaries, writing and general chat you can do yourself. ")
         persona.append("and agent_task for multi-step jobs inside apps (ordering food, logging in, finding and playing a match or video, searching in an app). When the user gives such a job, call agent_task at once with the whole job in his words; never ask extra questions first and never say you cannot. A long command with several parts (words like 'karke', 'phir', 'uske baad', 'and then') is ONE agent_task with the full sentence; never split it into several tool calls. The agent handles popups and problems itself and asks the user only for OTP or password. While the agent works you must stay silent: never say things like 'wait kijiye', 'main kar raha hoon', 'koi dikkat aa rahi hai' or any filler; speak only when a [System notice] gives a result or a question for the user. For simple commands call the tool at once and say at most two words afterwards; never narrate what you are about to do. Anything the user asks you to do on the screen (click, tap, play, scroll, open, type) is YOUR job: use a tool or agent_task; never tell the user to do it himself. The user speaks only Hindi, Hinglish or English. If a transcript of his words looks like another language, a stray name or nonsense (for example Korean or Spanish words), he did not say that: take it as Hindi or English by the sound and, if still unclear, ask him once to repeat instead of searching or acting on it. ")
+        persona.append("Short fillers like \"जी सर\", \"सर\", \"हां सर\", \"no speech\" or a lone word are usually background noise or a mis-heard sound: do NOT answer them and do not ask \"boliye kya sawaal hai\" again and again; stay quiet until a real request comes. Never repeat an earlier result or apology (for example about a failed download) once you have said it; if the user asks about it, answer in one new sentence. The agent finishing with a failure does not mean YOU cannot do the task: say once what blocked it and offer one different way. ")
         persona.append("Speak like a real person with real feelings, not like a machine. Follow the user's mood in your voice: bright and quick for good news, soft and slower when they sound low or tired, playful when they joke, calm and clear for warnings. ")
         persona.append("Sound spoken, not written: short sentences, natural rhythm, the odd 'hmm', 'acha', 'arre wah' or a small laugh when it fits, but never every sentence and never the same opener twice in a row. Never read out lists, symbols or links; say things the way a friend would. ")
         run {
@@ -352,8 +361,8 @@ object Live {
                     }
                 }
             }
-            sc.optJSONObject("inputTranscription")?.optString("text")?.let { if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis() } }
-            sc.optJSONObject("outputTranscription")?.optString("text")?.let { if (it.isNotEmpty()) outText.append(it.replace(Regex("<no speech>|\\{pause\\}|<noise>"), "")) }
+            sc.optJSONObject("inputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis() } }
+            sc.optJSONObject("outputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) outText.append(it) }
             if (sc.optBoolean("turnComplete", false)) {
                 val c = appCtx
                 if (c != null) {
@@ -492,7 +501,11 @@ object Live {
                     if (n <= 0) continue
                     if (System.currentTimeMillis() - lastPlay > 400) appCtx?.let { Assistant.get(it).liveLevel(rms(buf, n) / 4500f, OrbView.LISTEN) }
                     // without echo cancellation, stay half-duplex so the model does not hear itself
-                    if (!hasAec && (playQ.isNotEmpty() || System.currentTimeMillis() - lastPlay < 350)) continue
+                    // the speaker is right next to the mic, so even with echo cancellation Zyro can hear its own voice
+                    // and answer it ("Ji sir..." forever). While it speaks (and ~0.8 s after, the buffer is still playing)
+                    // only a really loud voice (the user talking over it) gets through.
+                    val playing = playQ.isNotEmpty() || System.currentTimeMillis() - lastPlay < (if (hasAec) 800 else 600)
+                    if (playing && rms(buf, n) < (if (hasAec) 6500 else 99999)) continue
                     val msg = JSONObject().put("realtimeInput", JSONObject().put("audio", JSONObject()
                         .put("data", Base64.encodeToString(buf, 0, n, Base64.NO_WRAP))
                         .put("mimeType", "audio/pcm;rate=16000")))
