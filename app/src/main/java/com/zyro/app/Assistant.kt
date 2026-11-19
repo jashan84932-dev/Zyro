@@ -575,6 +575,7 @@ class Assistant private constructor(private val app: Context) {
         state("Thinking…", OrbView.THINK)
         val t0 = android.os.SystemClock.uptimeMillis()
         Thread {
+            try { Soul.observe(text) } catch (e: Exception) { }
             var usedAi = false
             val reply = try {
                 if (Smart.persona != null && !Smart.modeCommand(text)) {

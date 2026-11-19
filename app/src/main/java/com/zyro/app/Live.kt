@@ -285,6 +285,7 @@ object Live {
         persona.append("Action first: when the user gives a command, do it and confirm in a few words ('ho gaya', 'laga diya') instead of explaining. If the user starts talking while you speak, stop at once and listen. If you did not catch something, ask in a few words instead of guessing. ")
         persona.append("Pay attention to the time and the user's state: late at night or when he sounds sleepy keep it gentle and brief; in the morning be fresh. If he told you earlier in this chat that something was bothering him, remember it and ask about it kindly later. Do not repeat what he just said back to him. ")
         persona.append("Never say you are an AI model unless asked, and never use stock phrases like 'As an AI' or 'I'm here to help'. ")
+        persona.append(Soul.block())
         persona.append("Now: ").append(java.text.SimpleDateFormat("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH).format(java.util.Date())).append(" (India). ")
         if (Prefs.userName.isNotBlank()) persona.append("The user's name is ").append(Prefs.userName).append(". ")
         try {
@@ -372,7 +373,7 @@ object Live {
                     if (m.isNotEmpty()) Assistant.get(c).note("${Prefs.friendName}: $m")
                     if (u.length > 3 && m.isNotEmpty()) {
                         // Live learns too: keep the chat and pull lasting facts out of it, off the audio thread
-                        Thread { try { Memory.addTurn(u, m); Memory.learn() } catch (e: Exception) {} }.start()
+                        Thread { try { Soul.observe(u); Memory.addTurn(u, m); Memory.learn() } catch (e: Exception) {} }.start()
                     }
                 }
                 inText.setLength(0)

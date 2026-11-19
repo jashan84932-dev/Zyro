@@ -63,6 +63,10 @@ object Prefs {
         set(v) = write("friendName", v.trim())
 
     /** What the friend calls you. */
+    var soul: String
+        get() = read("soul", "{}")
+        set(v) = write("soul", v)
+
     var userName: String
         get() = read("userName", "")
         set(v) = write("userName", v.trim())
