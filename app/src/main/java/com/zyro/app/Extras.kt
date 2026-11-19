@@ -32,6 +32,7 @@ object Extras {
     }
 
     private fun strip(s: String) = Local.strip(s)
+    internal fun appContext(): Context? = appCtx
 
     // ------------------------------------------------------------------ pending WhatsApp draft
 
@@ -39,6 +40,7 @@ object Extras {
 
     /** Called first for every sentence: answers "haan bhejo" / "nahi" after a WhatsApp draft. */
     fun handlePending(hands: Hands, t: String, words: List<String>): String? {
+        Trip.handlePending(t, words)?.let { return it }
         Agent.handlePending(t, words)?.let { return it }
         Safety.handlePending(hands, t, words)?.let { return it }
         Pro.handlePending(hands, t, words)?.let { return it }
@@ -83,6 +85,8 @@ object Extras {
         fun word(vararg w: String) = w.any { x -> words.contains(strip(x)) }
 
         // ----- calls, SMS, OTP, navigation, habits -----
+        Trip.handle(ctx, t, raw)?.let { return it }
+        Busy.handle(hands, t, words, raw)?.let { return it }
         Github.handle(ctx, t, raw)?.let { return it }
         Wow.handle(ctx, hands, t, raw)?.let { return it }
         Teach.handle(ctx, hands, t, raw)?.let { return it }

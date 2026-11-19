@@ -325,6 +325,15 @@ object Prefs {
         set(v) {
             sp?.edit()?.putBoolean("autoReply", v)?.apply()
         }
+    var busyMode: Boolean
+        get() = sp?.getBoolean("busyMode", false) ?: false
+        set(v) { sp?.edit()?.putBoolean("busyMode", v)?.apply() }
+    var spamBlock: Boolean
+        get() = sp?.getBoolean("spamBlock", false) ?: false
+        set(v) { sp?.edit()?.putBoolean("spamBlock", v)?.apply() }
+    var busyLog: String
+        get() = read("busyLog", "[]")
+        set(v) = write("busyLog", v)
     var autoReplyNote: String
         get() = read("autoReplyNote", "")
         set(v) = write("autoReplyNote", v)

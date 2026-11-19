@@ -844,7 +844,7 @@ Rules:
                     }
                     Thread.sleep(900)
                 }
-                "wait" -> Thread.sleep(2500)
+                "wait" -> { history.add("waited for the screen to load"); settle(hands, sig) }
                 else -> history.add("unknown action '$action'")
             }
             while (logged < history.size) { Assistant.get(ctx).note("⚙ " + history[logged]); logged++ }

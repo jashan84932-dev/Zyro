@@ -165,6 +165,7 @@ class Assistant private constructor(private val app: Context) {
             main.postDelayed({
                 if (ringHandled || !active) return@postDelayed
                 ringHandled = true
+                if (try { Busy.onRing(app, lastRingNumber) } catch (e: Exception) { false }) return@postDelayed
                 val msg = Comms.incomingCallText(lastRingNumber) ?: return@postDelayed
                 generation++
                 recognizer?.cancel()

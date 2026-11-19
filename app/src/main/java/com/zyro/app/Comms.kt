@@ -214,7 +214,7 @@ object Comms {
         return "${who(ctx, r)} को कॉल कर रहा हूँ।"
     }
 
-    private fun nameFor(ctx: Context, number: String): String? {
+    internal fun nameFor(ctx: Context, number: String): String? {
         if (number.isBlank() || !has(ctx, Manifest.permission.READ_CONTACTS)) return null
         return try {
             val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number))
