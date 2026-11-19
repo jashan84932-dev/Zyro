@@ -19,6 +19,7 @@ object Agent {
 
     @Volatile var running = false
         private set
+    @Volatile private var visionAsked = 0L
     @Volatile private var cancelled = false
     @Volatile private var awaiting: String? = null // question waiting for yes/no
     @Volatile private var answer: Boolean? = null
@@ -83,7 +84,13 @@ object Agent {
             connectors.any { tn.contains(Local.strip(it)) } &&
             listOf("open", "kholo", "खोल", "baat", "बात", "upload", "bhej", "भेज", "search", "ढूंढ", "download", "लिख", "likh").any { tn.contains(Local.strip(it)) }
         if (!explicit && !smart && !multi && !heavy) return null
-        if (running) return "मैं पहले से एक काम कर रहा हूँ। उसे रोकना हो तो बोलो रुको।"
+        if (running) {
+            // a new, different task replaces the old one instead of being refused
+            cancel()
+            var w = 0
+            while (running && w < 30) { Thread.sleep(100); w++ }
+            if (running) return "मैं पहले से एक काम कर रहा हूँ। उसे रोकना हो तो बोलो रुको।"
+        }
         var job = raw.trim()
         for (tr in TRIGGERS) {
             val i = low(job).indexOf(tr)
@@ -564,12 +571,13 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
             val unlabeled = els.count { it.label.isEmpty() }
             val hasPwd = els.any { it.label == "(password field)" }
             val shot: String? = if (Vision.on && !hasPwd && (same >= 2 || els.size < 4 || unlabeled * 2 > els.size)) Vision.grab() else null
-            if (!Vision.on && !hinted && (same >= 3 || (els.size < 4 && step > 2))) {
+            if (!Vision.on && !hinted && System.currentTimeMillis() - visionAsked > 600_000L && (same >= 3 || (els.size < 4 && step > 2))) {
                 hinted = true
+                visionAsked = System.currentTimeMillis()
                 // ask for the screen-view permission right now, so the user only has to press one button
                 say("यहाँ बिना नाम वाले बटन हैं। स्क्रीन देखने की इजाज़त वाली खिड़की खुल रही है, उसमें Start now दबा दो।")
                 try { Vision.ask(ctx) } catch (e: Exception) { }
-                val waitEnd = System.currentTimeMillis() + 40_000L
+                val waitEnd = System.currentTimeMillis() + 12_000L
                 while (!Vision.on && !cancelled && System.currentTimeMillis() < waitEnd) Thread.sleep(500)
                 if (Vision.on) { Thread.sleep(800); continue }
             }
@@ -741,7 +749,21 @@ Rules:
                 }
                 "scroll_find" -> {
                     val target = low(txt).trim()
+                    if (target.isEmpty()) {
+                        history.add("scroll_find needs a text: say which button or title to look for. Look at the screen list and choose tap with an id instead.")
+                        recordable = false
+                        continue
+                    }
                     val up = low(sayText) == "up"
+                    if (target.contains("download") || target.contains("डाउनलोड")) {
+                        // the video page may still be loading: wait up to 3 s for its button row
+                        var pw = 0
+                        while (pw < 6 && !cancelled) {
+                            val o0 = observe(hands)
+                            if (o0 != null && o0.second.any { e -> val l = low(e.label); l.startsWith("share") || l.startsWith("like") || l.startsWith("शेयर") || l.startsWith("लाइक") }) break
+                            Thread.sleep(500); pw++
+                        }
+                    }
                     var found = false
                     var tries = 0
                     while (target.isNotEmpty() && tries < 10 && !cancelled) {
