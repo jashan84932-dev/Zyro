@@ -25,8 +25,8 @@ import android.widget.Toast
 class SettingsActivity : Activity() {
 
     private companion object {
-        val BG = Color.rgb(4, 6, 12)
-        val GOLD = Color.rgb(255, 140, 50)
+        val BG = Color.rgb(2, 11, 18)
+        val GOLD = Color.rgb(60, 210, 250)
         val SOFT = Color.rgb(222, 236, 255)
         val DIM = Color.rgb(150, 150, 165)
     }
@@ -76,7 +76,7 @@ class SettingsActivity : Activity() {
             setSingleLine(true)
             setTextColor(SOFT)
             setHintTextColor(DIM)
-            backgroundTintList = ColorStateList.valueOf(Color.argb(150, 255, 140, 50))
+            backgroundTintList = ColorStateList.valueOf(Color.argb(150, 60, 210, 250))
             inputType = if (secret) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             else InputType.TYPE_CLASS_TEXT
         }
@@ -87,8 +87,8 @@ class SettingsActivity : Activity() {
             setTextColor(if (filled) BG else GOLD)
             background = GradientDrawable().apply {
                 cornerRadius = dp(26).toFloat()
-                setColor(if (filled) GOLD else Color.argb(24, 255, 140, 50))
-                setStroke(dp(1), Color.argb(190, 255, 140, 50))
+                setColor(if (filled) GOLD else Color.argb(24, 60, 210, 250))
+                setStroke(dp(1), Color.argb(190, 60, 210, 250))
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
@@ -114,8 +114,8 @@ class SettingsActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(220))
             background = GradientDrawable().apply {
                 cornerRadius = dp(16).toFloat()
-                setColor(Color.argb(22, 255, 140, 50))
-                setStroke(dp(1), Color.argb(90, 255, 140, 50))
+                setColor(Color.argb(22, 60, 210, 250))
+                setStroke(dp(1), Color.argb(90, 60, 210, 250))
             }
         }
         logView = TextView(this).apply {

@@ -54,7 +54,7 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
         const val POWER = 2
         const val BACK = 3
         private val BLUE = Color.rgb(47, 140, 255)
-        private val ICE = Color.rgb(190, 228, 255)
+        private val ICE = Color.rgb(223, 250, 255)
     }
 
     private val d = resources.displayMetrics.density
@@ -94,7 +94,8 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
         val h = height.toFloat()
         val cx = w / 2f
         val cy = h / 2f
-        val r = minOf(w, h) / 2f - 5f * d
+        // the same size as the design preview: the circle fills the whole 48 dp / 96 dp button
+        val r = minOf(w, h) / 2f - 1.5f * d
 
         val now = System.nanoTime()
         val dt = if (last == 0L) 0.016f else ((now - last) / 1e9f).coerceIn(0.001f, 0.05f)
@@ -112,7 +113,7 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
         if (ripple < 1f) {
             ripple = minOf(1f, ripple + dt / 0.55f)
             ring.strokeWidth = (3f * (1f - ripple) + 0.8f) * d
-            ring.color = Color.argb(((1f - ripple) * (1f - ripple) * 210).toInt(), 255, 170, 90)
+            ring.color = Color.argb(((1f - ripple) * (1f - ripple) * 210).toInt(), 90, 220, 255)
             c.drawCircle(cx, cy, r * (1f + ripple * 0.75f), ring)
         }
 
@@ -121,22 +122,28 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
             val pulse = 0.85f + 0.15f * sin(t * 3.2f)
             glow.shader = RadialGradient(
                 cx, cy, r * 1.55f,
-                intArrayOf(Color.argb((150 * lit * pulse).toInt(), 255, 130, 40), Color.argb(0, 255, 110, 30)),
+                intArrayOf(Color.argb((150 * lit * pulse).toInt(), 40, 190, 240), Color.argb(0, 30, 170, 230)),
                 floatArrayOf(0.55f, 1f), Shader.TileMode.CLAMP
             )
             c.drawCircle(cx, cy, r * 1.55f, glow)
         }
 
         // glass disc
-        val base = 26 + (70 * lit).toInt() + (30 * pressedAmt).toInt()
-        fill.shader = RadialGradient(
-            cx, cy - r * 0.35f, r * 1.25f,
-            intArrayOf(Color.argb(base + 40, 255, 150, 70), Color.argb(base, 70, 40, 30), Color.argb(base / 2, 14, 12, 18)),
-            floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP
-        )
+        val boost = (60 * lit).toInt() + (40 * pressedAmt).toInt()
+        if (kind == GEAR) {
+            // flat tinted glass, like the preview
+            fill.shader = null
+            fill.color = Color.argb(31 + boost, 40, 160, 200)
+        } else {
+            fill.shader = RadialGradient(
+                cx, cy - r * 0.4f, r * 1.25f,
+                intArrayOf(Color.argb(102 + boost, 60, 200, 240), Color.argb(128, 5, 25, 35)),
+                floatArrayOf(0f, 1f), Shader.TileMode.CLAMP
+            )
+        }
         c.drawCircle(cx, cy, r, fill)
         ring.strokeWidth = 1.3f * d
-        ring.color = Color.argb(120 + (100 * lit).toInt(), 255, 170, 90)
+        ring.color = Color.argb((if (kind == GEAR) 153 else 204) + (50 * lit).toInt().coerceAtMost(50), 90, 220, 255)
         c.drawCircle(cx, cy, r, ring)
 
         // a bright spark circles the rim while active
@@ -145,9 +152,9 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
             ring.strokeCap = Paint.Cap.ROUND
             box.set(cx - r, cy - r, cx + r, cy + r)
             val a0 = (t * 160f) % 360f
-            ring.color = Color.argb((235 * lit).toInt(), 255, 235, 200)
+            ring.color = Color.argb((235 * lit).toInt(), 225, 250, 255)
             c.drawArc(box, a0, 34f, false, ring)
-            ring.color = Color.argb((90 * lit).toInt(), 255, 180, 100)
+            ring.color = Color.argb((90 * lit).toInt(), 110, 220, 255)
             c.drawArc(box, a0 - 40f, 40f, false, ring)
             ring.strokeCap = Paint.Cap.BUTT
         }
@@ -155,6 +162,8 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
         // icon
         val s = r * 0.46f
         ink.strokeWidth = maxOf(2f, r * 0.085f)
+        val gu = r / 24f  // gear: the preview's 24 unit icon inside the 48 dp circle
+        val lu = r / 48f  // live bars: the preview's dp sizes inside the 96 dp circle
         ink.color = if (on) Color.WHITE else ICE
         solid.color = ink.color
         when (kind) {
@@ -162,25 +171,24 @@ class IconView(context: Context, private val kind: Int, private val isOn: () -> 
                 c.save()
                 c.translate(cx, cy)
                 c.rotate(t * 8f * lit)
+                ink.strokeWidth = 2f * gu
+                ink.style = Paint.Style.STROKE
                 for (i in 0 until 8) {
                     c.save()
                     c.rotate(i * 45f)
-                    box.set(-s * 0.16f, -s * 1.12f, s * 0.16f, -s * 0.78f)
-                    c.drawRoundRect(box, 2f * d, 2f * d, solid)
+                    c.drawLine(0f, -6.5f * gu, 0f, -9.5f * gu, ink)
                     c.restore()
                 }
-                ink.style = Paint.Style.STROKE
-                c.drawCircle(0f, 0f, s * 0.80f, ink)
-                c.drawCircle(0f, 0f, s * 0.30f, ink)
+                c.drawCircle(0f, 0f, 3.2f * gu, ink)
                 c.restore()
             }
             LIVE -> {
-                val hs = floatArrayOf(0.45f, 0.95f, 1.5f, 0.95f, 0.45f)
-                val gap = s * 0.52f
+                val hs = floatArrayOf(10f, 18f, 25f, 18f, 10f)  // half heights of the preview's 20, 36, 50, 36, 20 dp bars
+                ink.strokeWidth = 5f * lu
                 for (i in 0 until 5) {
                     val wob = if (on) 0.55f + 0.45f * abs(sin(t * (3.1f + i * 0.9f) + i)) else 1f
-                    val hh = hs[i] * s * wob
-                    val x = cx + (i - 2) * gap
+                    val hh = (hs[i] * lu - 2.5f * lu) * wob  // round caps add the rest
+                    val x = cx + (i - 2) * 11f * lu
                     c.drawLine(x, cy - hh, x, cy + hh, ink)
                 }
             }

@@ -65,6 +65,12 @@ object Busy {
     // ---------------------------------------------------------------- log
 
     private fun log(number: String, name: String?, kind: String) {
+        try {
+            val c = Extras.appContext()
+            val who = name ?: ("नंबर " + digits(number).takeLast(10))
+            val txt = when (kind) { "spam" -> "📵 स्पैम कॉल काटी: $who"; "busy" -> "📵 बिज़ी मोड: $who की कॉल काटी, SMS भेजा"; "repeat" -> "⚠️ $who ने दोबारा कॉल की, शायद ज़रूरी है"; else -> null }
+            if (c != null && txt != null) Assistant.get(c).note(txt)
+        } catch (e: Exception) { }
         val arr = try { JSONArray(Prefs.busyLog) } catch (e: Exception) { JSONArray() }
         arr.put(JSONObject().put("n", number).put("name", name ?: "").put("t", System.currentTimeMillis()).put("k", kind))
         // keep the last 60

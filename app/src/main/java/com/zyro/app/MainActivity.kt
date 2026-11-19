@@ -20,7 +20,7 @@ import android.widget.Toast
 class MainActivity : Activity() {
 
     private lateinit var assistant: Assistant
-    private lateinit var orb: OrbView
+    private lateinit var orb: ReactorView
     private lateinit var liveBtn: IconView
     private lateinit var gearBtn: IconView
 
@@ -31,13 +31,13 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         assistant = Assistant.get(this)
-        val bg = Color.rgb(3, 5, 10)
+        val bg = Color.rgb(2, 11, 18)
         window.statusBarColor = bg
         window.navigationBarColor = bg
 
         val root = FrameLayout(this).apply { setBackgroundColor(bg) }
 
-        orb = OrbView(this).apply {
+        orb = ReactorView(this).apply {
             modeSource = { assistant.mode }
             levelSource = { assistant.level }
             setOnClickListener { toggleLive() }
@@ -49,8 +49,8 @@ class MainActivity : Activity() {
             setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
         }
         root.addView(gearBtn, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.END).apply {
-            topMargin = dp(40)
-            marginEnd = dp(18)
+            topMargin = dp(44)
+            marginEnd = dp(20)
         })
 
         liveBtn = IconView(this, IconView.LIVE) { Live.active }.apply {
