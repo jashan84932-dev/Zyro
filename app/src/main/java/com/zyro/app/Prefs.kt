@@ -329,6 +329,21 @@ object Prefs {
         set(v) {
             sp?.edit()?.putBoolean("autoReply", v)?.apply()
         }
+    var nudgeOn: Boolean
+        get() = sp?.getBoolean("nudgeOn", true) ?: true
+        set(v) { sp?.edit()?.putBoolean("nudgeOn", v)?.apply() }
+    var nudgeState: String
+        get() = read("nudgeState", "{}")
+        set(v) = write("nudgeState", v)
+    var setupDone: Boolean
+        get() = sp?.getBoolean("setupDone", false) ?: false
+        set(v) { sp?.edit()?.putBoolean("setupDone", v)?.apply() }
+    var voicePrint: String
+        get() = read("voicePrint", "")
+        set(v) = write("voicePrint", v)
+    var voiceLock: Boolean
+        get() = sp?.getBoolean("voiceLock", false) ?: false
+        set(v) { sp?.edit()?.putBoolean("voiceLock", v)?.apply() }
     var busyMode: Boolean
         get() = sp?.getBoolean("busyMode", false) ?: false
         set(v) { sp?.edit()?.putBoolean("busyMode", v)?.apply() }

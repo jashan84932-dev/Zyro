@@ -41,6 +41,7 @@ object Extras {
     /** Called first for every sentence: answers "haan bhejo" / "nahi" after a WhatsApp draft. */
     fun handlePending(hands: Hands, t: String, words: List<String>): String? {
         Trip.handlePending(t, words)?.let { return it }
+        Scan.handlePending(t, words)?.let { return it }
         Agent.handlePending(t, words)?.let { return it }
         Safety.handlePending(hands, t, words)?.let { return it }
         Pro.handlePending(hands, t, words)?.let { return it }
@@ -87,6 +88,9 @@ object Extras {
         // ----- calls, SMS, OTP, navigation, habits -----
         Trip.handle(ctx, t, raw)?.let { return it }
         Busy.handle(hands, t, words, raw)?.let { return it }
+        Nudge.handle(t)?.let { return it }
+        VoicePrint.handle(ctx, t)?.let { return it }
+        Setup.handle(ctx, t)?.let { return it }
         Github.handle(ctx, t, raw)?.let { return it }
         Wow.handle(ctx, hands, t, raw)?.let { return it }
         Teach.handle(ctx, hands, t, raw)?.let { return it }

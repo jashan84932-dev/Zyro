@@ -104,6 +104,7 @@ object Live {
 
     fun start(ctx: Context, h: Hands, delayMs: Long = 2200L): String {
         if (active) return "लाइव मोड पहले से चालू है।"
+        if (!Net.online(ctx)) return "नेट नहीं है, इसलिए लाइव मोड नहीं चल सकता। नेट आने पर फिर बोलना। तब तक कॉल, अलार्म, टाइमर, ऐप खोलना जैसे काम नॉर्मल मोड में कर सकता हूँ।"
         if (Prefs.geminiKey.isBlank() && Prefs.liveProxy.isBlank()) return "लाइव के लिए Gemini key (या JARVIS server) चाहिए। सेटिंग में डालो।"
         if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return "पहले माइक की अनुमति दो।"
         hands = h
@@ -404,7 +405,8 @@ object Live {
             when (name) {
                 "phone_command" -> {
                     val cmd = args.optString("command")
-                    if (h == null || cmd.isBlank()) "no command"
+                    if (!VoicePrint.allowed() && !Local.strip(cmd).let { it.contains("voice") || it.contains(Local.strip("आवाज़")) }) "BLOCKED: the voice did not match the owner. Do not do it. Say in one short friendly line that this does not sound like the owner's voice, so you will not do it."
+                    else if (h == null || cmd.isBlank()) "no command"
                     else {
                         val r = Extras.chain(h, cmd) { Brain(h).reply(it) } ?: Local.handle(h, cmd)
                         when {
@@ -417,7 +419,8 @@ object Live {
                 "agent_task" -> {
                     val c = appCtx
                     val task = args.optString("task")
-                    if (h == null || c == null || task.isBlank()) "no task"
+                    if (!VoicePrint.allowed()) "BLOCKED: the voice did not match the owner. Do not do it. Say in one short friendly line that this does not sound like the owner's voice, so you will not do it."
+                    else if (h == null || c == null || task.isBlank()) "no task"
                     else {
                         val r = Agent.start(c, h, task)
                         if (Agent.running) "STARTED. The agent is now working on the whole job in the background. Do NOT speak and do NOT call any tool for this job. Stay completely silent until a [System notice] tells you the result."
@@ -497,6 +500,7 @@ object Live {
             // mic -> server
             Thread {
                 val buf = ByteArray(1280)
+                val vpCarry = VoicePrint.Carry()
                 while (active && my == gen) {
                     val n = r.read(buf, 0, buf.size)
                     if (n <= 0) continue
@@ -507,6 +511,7 @@ object Live {
                     // only a really loud voice (the user talking over it) gets through.
                     val playing = playQ.isNotEmpty() || System.currentTimeMillis() - lastPlay < (if (hasAec) 800 else 600)
                     if (playing && rms(buf, n) < (if (hasAec) 6500 else 99999)) continue
+                    try { VoicePrint.feed(buf, n, vpCarry) } catch (e: Exception) { }
                     val msg = JSONObject().put("realtimeInput", JSONObject().put("audio", JSONObject()
                         .put("data", Base64.encodeToString(buf, 0, n, Base64.NO_WRAP))
                         .put("mimeType", "audio/pcm;rate=16000")))

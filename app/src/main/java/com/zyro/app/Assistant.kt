@@ -185,6 +185,7 @@ class Assistant private constructor(private val app: Context) {
             try { Safety.tick() } catch (e: Exception) { /* steps are optional */ }
             try { Life.tick() } catch (e: Exception) { /* nudges are optional */ }
             try { Stark.tick() } catch (e: Exception) { /* warnings are optional */ }
+            try { Nudge.tick(app) } catch (e: Exception) { /* greetings are optional */ }
             if (mode == OrbView.LISTEN) {
                 val q = Comms.habitOffer()
                 if (q != null) {
@@ -582,9 +583,9 @@ class Assistant private constructor(private val app: Context) {
                     usedAi = true
                     brain.reply(Smart.wrap(text))
                 } else {
-                    Extras.chain(hands, text) { usedAi = true; brain.reply(it) }
+                    Extras.chain(hands, text) { if (!Net.online(app)) Net.OFFLINE_MSG else { usedAi = true; brain.reply(it) } }
                         ?: Local.handle(hands, text)?.also { Habit.record(text) }
-                        ?: run { usedAi = true; brain.reply(text) }
+                        ?: run { if (!Net.online(app)) Net.OFFLINE_MSG else { usedAi = true; brain.reply(text) } }
                 }
             } catch (e: Exception) {
                 "सॉरी, कुछ गड़बड़ हो गई।"

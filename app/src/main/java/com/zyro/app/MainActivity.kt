@@ -60,6 +60,11 @@ class MainActivity : Activity() {
         root.addView(liveBtn, FrameLayout.LayoutParams(dp(96), dp(96), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(56) })
 
         setContentView(root)
+        // first run: guide the user through permissions once (people who already set everything up are not bothered)
+        if (!Prefs.setupDone) {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED && Prefs.geminiKeysRaw.isNotBlank()) Prefs.setupDone = true
+            else try { startActivity(Intent(this, SetupActivity::class.java)) } catch (e: Exception) { }
+        }
     }
 
     private fun toggleLive() {

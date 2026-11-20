@@ -130,4 +130,27 @@ object Soul {
         sb.append("UNDERSTANDING: the speech recogniser often mishears Hindi, Hinglish and names. Before answering, think what similar-sounding Hindi or English words he most probably said, using the recent chat, the things he mentioned and what you know about him. If one reading is clearly most likely, go with it. If two readings are possible, or the words make no sense, ask in a few words with your best guess ('YouTube khol doon?', 'Lucky ko, na?'); never act on an odd phrase and never answer a different question than the one he asked. If he corrects you ('nahi, mera naam Jashan hai'), accept it in one short line and use the right word from then on. Match his language mix: Hindi if he speaks Hindi, English if he speaks English. ")
         return sb.toString()
     }
+
+    /** When the user last spoke to Zyro (0 when never). */
+    fun lastSeen(): Long = load().optLong("last", 0L)
+
+    /** An open thread older than [minAge] and younger than 4 days, as a short phrase; null when none. Each is used once. */
+    fun threadFor(minAge: Long): String? {
+        return try {
+            val o = load()
+            val th = o.optJSONArray("threads") ?: return null
+            val now = System.currentTimeMillis()
+            for (i in 0 until th.length()) {
+                val x = th.optJSONObject(i) ?: continue
+                if (x.optBoolean("asked")) continue
+                val age = now - x.optLong("at")
+                if (age in minAge..(4 * 86400_000L)) {
+                    x.put("asked", true)
+                    save(o)
+                    return x.optString("t").take(90)
+                }
+            }
+            null
+        } catch (e: Exception) { null }
+    }
 }
