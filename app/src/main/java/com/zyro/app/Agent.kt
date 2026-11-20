@@ -327,6 +327,71 @@ object Agent {
         return Pair(app, q)
     }
 
+    // ------------------------------------------------------------------ scripted YouTube download (no AI call per step)
+
+    private val YT_DL_STOP = setOf(
+        "download", "डाउनलोड", "video", "वीडियो", "videos", "360p", "144p", "360", "144", "quality", "क्वालिटी", "nai", "nayi", "naya", "नई", "नयी", "नया", "new", "latest",
+        "wali", "वाली", "hai", "है", "karke", "करके", "chahiye", "चाहिए", "do", "दो", "de", "दे", "se", "से", "jaldi", "जल्दी", "quickly", "fast"
+    )
+
+    /** (search words, newest first, 144p instead of 360p) for a plain "YouTube pe X ki video download karo", else null. */
+    private fun ytDownloadPlan(jl: String): Triple<String, Boolean, Boolean>? {
+        if (!(jl.contains("youtube") || jl.contains("यूट्यूब"))) return null
+        if (!(jl.contains("download") || jl.contains("डाउनलोड"))) return null
+        val padded = " $jl "
+        if (listOf(" aur ", " और ", " phir ", " फिर ", " then ", " and ", "whatsapp", "share", "शेयर", "send", "bhej", "भेज", "short", "शॉर्ट").any { padded.contains(it) }) return null
+        val latest = listOf("nai ", "nayi", "naya", "नई", "नयी", "नया", "new", "latest").any { padded.contains(it) }
+        val low144 = jl.contains("144")
+        val words = jl.split(Regex("[\\s,।.!?]+")).filter { it.isNotEmpty() }
+        val q = words.filter { it !in FAST_STOP && it !in YT_DL_STOP }.joinToString(" ")
+        if (q.isEmpty() || q.split(" ").size > 6) return null
+        return Triple(q, latest, low144)
+    }
+
+    /**
+     * Search link (videos only, newest first when asked) then: first result's ⋮ -> "Download video" -> quality -> Download.
+     * Returns the sentence to say when the download started, or null when any step was not there (the normal agent then continues from the open results).
+     */
+    private fun ytFastDownload(ctx: Context, hands: Hands, q: String, latest: Boolean, low144: Boolean): String? {
+        val e = java.net.URLEncoder.encode(q, "UTF-8")
+        val sp = if (latest) "&sp=CAISAhAB" else "&sp=EgIQAQ%253D%253D"
+        try {
+            val i = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/results?search_query=$e$sp"))
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            i.setPackage("com.google.android.youtube")
+            ctx.startActivity(i)
+        } catch (ex: Exception) { return null }
+        val dm = ctx.resources.displayMetrics
+        fun waitFor(ms: Long, pick: (List<El>) -> El?): El? {
+            val end = System.currentTimeMillis() + ms
+            while (System.currentTimeMillis() < end && !cancelled) {
+                val o = observe(hands)
+                val el = o?.second?.let(pick)
+                if (el != null) return el
+                Thread.sleep(220)
+            }
+            return null
+        }
+        val more = waitFor(10_000) { els ->
+            els.filter { val l = low(it.label); (l.contains("more options") || l.contains("action menu") || l == "more") && it.r.top > dm.heightPixels * 0.2 && it.r.centerX() > dm.widthPixels * 0.75 }
+                .minByOrNull { it.r.top }
+        } ?: return null
+        tapEl(hands, more)
+        val dl = waitFor(3500) { els -> els.firstOrNull { val l = low(it.label); l.contains("download") && !l.contains("downloads") && !l.contains("downloaded") } } ?: return null
+        tapEl(hands, dl)
+        val want = if (low144) "144p" else "360p"
+        val opt = waitFor(3000) { els -> els.firstOrNull { low(it.label).contains(want) } }
+        if (opt != null) {
+            tapEl(hands, opt)
+            Thread.sleep(250)
+            val go = waitFor(2500) { els -> els.firstOrNull { low(it.label).trim() == "download" && it.clickable } }
+                ?: waitFor(1000) { els -> els.firstOrNull { low(it.label).trim() == "download" } }
+            if (go != null) tapEl(hands, go) else return null
+        }
+        Thread.sleep(700)
+        return "डाउनलोड शुरू हो गया ($want)। YouTube में You टैब, फिर Downloads में दिखेगा।"
+    }
+
     /**
      * Opens a search result page straight from a link (YouTube, Maps, Spotify, Amazon, Flipkart, Google),
      * skipping the open-app / find-box / type / enter steps. Returns a note for the agent, or null.
@@ -547,9 +612,15 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         planThread?.start()
         // open the named app right away, no AI call needed for that
         val jl = low(job)
-        val deep = deepOpen(ctx, job)
-        if (deep != null) { history.add(deep); Thread.sleep(1800) }
-        val first = if (deep != null) null else APPS.firstOrNull { it.all { c -> c.code < 128 } && jl.contains(it) }
+        val ytdl = ytDownloadPlan(jl)
+        if (ytdl != null) {
+            val fast = try { ytFastDownload(ctx, hands, ytdl.first, ytdl.second, ytdl.third) } catch (ex: Exception) { null }
+            if (fast != null) { say(fast); return }
+            history.add("opened youtube search results for \"${ytdl.first}\" directly via link (the search is ALREADY done). Quick route failed: do it by hand: tap the ⋮ at the right of the first video, then 'Download video', then the 360p option, then Download.")
+        }
+        val deep = if (ytdl != null) "" else deepOpen(ctx, job)
+        if (deep != null && deep.isNotEmpty()) { history.add(deep); Thread.sleep(1800) }
+        val first = if (deep != null || ytdl != null) null else APPS.firstOrNull { it.all { c -> c.code < 128 } && jl.contains(it) }
         if (first != null) {
             val r = openSmart(hands, first)
             if (r.startsWith("Opened")) { mainApp = first; history.add("open_app $first -> $r"); Thread.sleep(1200) }
