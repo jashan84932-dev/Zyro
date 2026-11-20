@@ -296,7 +296,36 @@ object Agent {
         } catch (e: Exception) {}
     }
 
-    private val DEEP_APPS = listOf("youtube", "maps", "spotify", "amazon", "flipkart", "google", "यूट्यूब", "मैप", "स्पोटिफाई", "अमेज़न", "अमेजन", "फ्लिपकार्ट", "गूगल")
+    private val DEEP_APPS = listOf("youtube", "maps", "spotify", "amazon", "flipkart", "google", "यूट्यूब", "मैप", "स्पोटिफाई", "अमेज़न", "अमेजन", "फ्लिपकार्ट", "गूगल", "play store", "playstore", "प्ले स्टोर")
+
+    private val FAST_STOP = setOf(
+        "khol", "kholo", "खोल", "खोलो", "open", "search", "serch", "karo", "kar", "करो", "कर", "dhundo", "dhoondo", "ढूंढो", "ढूँढो", "dhundh", "chalao", "chala", "चलाओ", "चला",
+        "play", "laga", "lagao", "लगाओ", "लगा", "dekho", "dikhao", "दिखाओ", "देखो", "par", "pe", "पर", "पे", "mein", "me", "में", "ka", "ki", "ke", "ko", "का", "की", "के", "को",
+        "wahan", "वहां", "वहाँ", "jaldi", "जल्दी", "please", "plz", "zara", "ज़रा", "जरा", "mujhe", "मुझे", "ek", "एक", "ab", "अब", "me", "app", "ऐप", "एप", "bhai", "यार", "yaar", "sunao", "सुनाओ",
+        "youtube", "यूट्यूब", "maps", "map", "मैप", "मैप्स", "spotify", "स्पोटिफाई", "amazon", "अमेज़न", "अमेजन", "flipkart", "फ्लिपकार्ट", "google", "गूगल", "play", "store", "playstore", "प्ले", "स्टोर", "install", "इंस्टॉल"
+    )
+
+    /** (app, query) when the job is one short plain sentence like "YouTube pe tagda gaana chalao"; otherwise null. */
+    private fun fastGuess(jl: String): Pair<String, String>? {
+        val words = jl.split(Regex("[\\s,।.!?]+")).filter { it.isNotEmpty() }
+        if (words.size > 9) return null
+        val blockers = listOf("download", "डाउनलोड", "message", "मैसेज", "call", "कॉल", "whatsapp", "व्हाट्सएप", " aur ", " और ", " phir ", " फिर ", " then ", " and ", "like", "लाइक", "comment", "कमेंट", "share", "शेयर", "subscribe", "सब्सक्राइब", "order", "ऑर्डर", "buy", "खरीद")
+        val padded = " $jl "
+        if (blockers.any { padded.contains(it) }) return null
+        val app = when {
+            jl.contains("youtube") || jl.contains("यूट्यूब") -> "youtube"
+            jl.contains("spotify") || jl.contains("स्पोटिफाई") -> "spotify"
+            jl.contains("flipkart") || jl.contains("फ्लिपकार्ट") -> "flipkart"
+            jl.contains("amazon") || jl.contains("अमेज़न") || jl.contains("अमेजन") -> "amazon"
+            jl.contains("play store") || jl.contains("playstore") || jl.contains("प्ले स्टोर") -> "playstore"
+            jl.contains("maps") || jl.contains("मैप") -> "maps"
+            jl.contains("google") || jl.contains("गूगल") -> "google"
+            else -> return null
+        }
+        val q = words.filter { it !in FAST_STOP }.joinToString(" ")
+        if (q.isEmpty() || q.split(" ").size > 7) return null
+        return Pair(app, q)
+    }
 
     /**
      * Opens a search result page straight from a link (YouTube, Maps, Spotify, Amazon, Flipkart, Google),
@@ -305,15 +334,22 @@ object Agent {
     private fun deepOpen(ctx: Context, job: String): String? {
         val jl = low(job)
         if (DEEP_APPS.none { jl.contains(it) }) return null
-        val r = Brain.quickJson(
-            "User task for a phone agent: \"$job\"\nIf the task starts by searching or playing something in YouTube, Google Maps, Spotify, Amazon, Flipkart or Google, " +
-                "reply {\"app\":\"youtube|maps|spotify|amazon|flipkart|google\",\"query\":\"only the search words, in the language a user would type\"}. " +
-                "Otherwise reply {\"app\":\"none\",\"query\":\"\"}. JSON only.",
-            90, 8000, true
-        ) ?: return null
-        val j = try { JSONObject(r.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()) } catch (e: Exception) { return null }
-        val app = low(j.optString("app"))
-        val q = j.optString("query").trim()
+        // fast path: a short, simple "YouTube pe X chalao" is understood here, without waiting for an AI call
+        val local = fastGuess(jl)
+        var app: String
+        var q: String
+        if (local != null) { app = local.first; q = local.second }
+        else {
+            val r = Brain.quickJson(
+                "User task for a phone agent: \"$job\"\nIf the task starts by searching or playing something in YouTube, Google Maps, Spotify, Amazon, Flipkart, Play Store or Google, " +
+                    "reply {\"app\":\"youtube|maps|spotify|amazon|flipkart|playstore|google\",\"query\":\"only the search words, in the language a user would type\"}. " +
+                    "Otherwise reply {\"app\":\"none\",\"query\":\"\"}. JSON only.",
+                90, 8000, true
+            ) ?: return null
+            val j = try { JSONObject(r.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()) } catch (e: Exception) { return null }
+            app = low(j.optString("app"))
+            q = j.optString("query").trim()
+        }
         if (q.isEmpty() || app == "none") return null
         val e = java.net.URLEncoder.encode(q, "UTF-8")
         val (url, pkg) = when (app) {
@@ -323,6 +359,7 @@ object Agent {
             "amazon" -> Pair("https://www.amazon.in/s?k=$e", "in.amazon.mShop.android.shopping")
             "flipkart" -> Pair("https://www.flipkart.com/search?q=$e", "com.flipkart.android")
             "google" -> Pair("https://www.google.com/search?q=$e", "")
+            "playstore" -> Pair("market://search?q=$e", "com.android.vending")
             else -> return null
         }
         fun go(withPkg: Boolean): Boolean = try {
@@ -796,7 +833,10 @@ Rules:
                             }
                         }
                     }
-                    history.add("scroll_find \"$txt\": " + if (found) "FOUND on screen after $tries scrolls, tap it now" else "not found after $tries scrolls (end of list reached or it is not here)")
+                    val seen = if (found) "" else try {
+                        (observe(hands)?.second ?: emptyList()).map { e -> e.label.trim().take(24) }.filter { it.isNotEmpty() }.distinct().take(28).joinToString(" | ")
+                    } catch (e: Exception) { "" }
+                    history.add("scroll_find \"$txt\": " + if (found) "FOUND on screen after $tries scrolls, tap it now" else "not found after $tries scrolls (end of list reached or it is not here)" + (if (seen.isNotEmpty()) ". On screen now: $seen" else ""))
                     recordable = false
                     // the same thing searched again and again = it is simply not there: stop honestly instead of looping
                     if (!found && target.isNotEmpty()) {
@@ -884,7 +924,7 @@ Rules:
     /** Waits only as long as the screen needs to change (up to ~2.2 s) instead of a fixed pause. */
     /** Short, hand-written know-how for the apps people use most, so the AI does not have to rediscover it every time. */
     private fun appTips(pkg: String): String? = when {
-        pkg.contains("youtube") -> "DOWNLOAD: most videos can be downloaded in the free app. The Download button sits in the row of buttons UNDER the video (Like, Dislike, Share, Remix, Download...); that row scrolls sideways and scroll_find swipes it for you. Tap Download, pick a quality if asked (the default is fine), and it is done when the button shows 'Downloaded' or a tick. A few videos do not allow downloading and then have no button anywhere: only then tell the user honestly. The player must be NOT full screen and the video must be open (not just the search list). Search is the magnifier at the top right; type_enter in the box; results are a vertical list, tap a video TITLE. If a 'Skip ad' / 'Skip' button shows, tap it (ads can last up to 5 s). The video plays by itself; done = the player is on screen and playing."
+        pkg.contains("youtube") -> "HOW TO DOWNLOAD (checked on a real phone): there is NO Download button in the row under the video (that row is: channel photo, Subscribe, Like, Dislike, Share, a sparkle icon, and a ⋯ More button). Route A, on the open video page: tap the ⋯ (More / three dots) button at the right end of that row; a sheet opens with Save, Thanks, Download, Report; tap Download. Route B, in search results, a channel page or a list: tap the ⋮ (More options) at the right of the video's title; the menu shows Play next in queue, Save to Watch later, Save to playlist, Download video, Share, Remix, Report; tap 'Download video'. Route B is faster, use it when you are on a list. Then a 'Download quality' dialog appears: choose 'Medium (360p)' (the free maximum) or 'Low (144p)'; the 720p/1080p options are YouTube Premium only, never pick them; then tap the Download button at the bottom of the dialog. If the user asked 360p pick Medium (360p). It is done when the dialog closes and a download starts; downloaded videos are listed in You tab > Downloads. Shorts cannot be downloaded (their ⋯ menu has only Description, Captions, Quality, Not interested, Don't recommend, Report): tell the user honestly. Live streams and some videos do not allow it. The player must be NOT full screen and the video must be open for Route A. Search is the magnifier at the top right; type_enter in the box; results are a vertical list, tap a video TITLE. If a 'Skip ad' / 'Skip' button shows, tap it (ads can last up to 5 s). The video plays by itself; done = the player is on screen and playing."
         pkg.contains("hotstar") -> "After opening choose the profile if asked. Live and sports are under the Sports / Cricket / Live rows or tabs; use Search (magnifier) for a match or show name. A 'Subscribe' wall means no subscription: do not pay, tell the user. Login is by phone number + OTP: use ask_user."
         pkg.contains("instagram") -> "Bottom bar: Home, Reels, Search, Profile. Reels are full-screen videos: swipe up (scroll_down) for the next one. Search = magnifier tab, type the name, tap the account (not the posts)."
         pkg.contains("whatsapp") -> "Search = magnifier at the top; tap the chat; message box says 'Type a message'; send is the green arrow button (label 'Send'). Never send unless the task says to send."

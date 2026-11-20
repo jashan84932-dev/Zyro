@@ -429,7 +429,9 @@ object Live {
                 }
                 "search_web" -> {
                     val q = args.optString("query")
-                    Brain.quickText("Answer briefly (max 3 sentences) using live web data: $q", 300, search = true) ?: "search failed"
+                    (Brain.quickText("Answer briefly (max 3 sentences) using live web data: $q", 300, search = true)
+                        ?: Brain.quickText("Answer briefly (max 3 sentences) from what you know, and say it may be out of date: $q", 300, search = false)?.let { "(live search did not work, so this is from memory and may be old) $it" }
+                        ?: "search failed: tell him honestly that the internet or search is not working right now")
                 }
                 "read_screen" -> if (h == null) "no screen access" else h.readScreen().take(2500)
                 "remember" -> {

@@ -26,7 +26,7 @@ object Know {
     /** How-to knowledge keyed by what the user wants to do. */
     private val HOWTO = listOf(
         listOf("download", "डाउनलोड", "save video", "वीडियो सेव") to
-            "DOWNLOADING VIDEOS: YouTube: open the video (not full screen); under the player is a row of buttons (Like, Dislike, Share, Remix, Download, Save...) that scrolls sideways, scroll_find \"Download\" swipes it for you. Tap Download, if the user named a quality (360p, 720p...) pick exactly that one in the quality list that appears, otherwise the default is fine. It is done when the button reads Downloaded or shows a tick. Some videos do not allow downloading and have no button: then tell the user honestly. Do not open downloader websites or apps (unsafe). Instagram: on a public reel tap the paper-plane (Share), then look for Download in the sheet; if it is missing the reel cannot be saved. Facebook: ⋮ > Save video (saves inside Facebook). WhatsApp: media goes to Gallery when auto-download is on; for a status use the download/save icon if shown. Telegram: tap the video then ⋮ > Save to Gallery.",
+            "DOWNLOADING VIDEOS: YouTube: HOW TO DOWNLOAD (checked on a real phone): there is NO Download button in the row under the video (that row is: channel photo, Subscribe, Like, Dislike, Share, a sparkle icon, and a ⋯ More button). Route A, on the open video page: tap the ⋯ (More / three dots) button at the right end of that row; a sheet opens with Save, Thanks, Download, Report; tap Download. Route B, in search results, a channel page or a list: tap the ⋮ (More options) at the right of the video's title; the menu shows Play next in queue, Save to Watch later, Save to playlist, Download video, Share, Remix, Report; tap 'Download video'. Route B is faster, use it when you are on a list. Then a 'Download quality' dialog appears: choose 'Medium (360p)' (the free maximum) or 'Low (144p)'; the 720p/1080p options are YouTube Premium only, never pick them; then tap the Download button at the bottom of the dialog. If the user asked 360p pick Medium (360p). It is done when the dialog closes and a download starts; downloaded videos are listed in You tab > Downloads. Shorts cannot be downloaded (their ⋯ menu has only Description, Captions, Quality, Not interested, Don't recommend, Report): tell the user honestly. Live streams and some videos do not allow it. Do not open downloader websites or apps (unsafe). Instagram: on a public reel tap the paper-plane (Share), then look for Download in the sheet; if it is missing the reel cannot be saved. Facebook: ⋮ > Save video (saves inside Facebook). WhatsApp: media goes to Gallery when auto-download is on; for a status use the download/save icon if shown. Telegram: tap the video then ⋮ > Save to Gallery.",
         listOf("record", "रिकॉर्ड") to "Screen recording = Quick Settings tile 'Screen recorder' (swipe down twice), then Start. Zyro cannot do it silently.",
         listOf("alarm", "अलार्म", "timer", "टाइमर") to "Alarms and timers: the Clock app; Zyro normally sets them directly without the UI.",
         listOf("wifi", "वाईफाई", "वाई-फाई", "bluetooth", "ब्लूटूथ", "torch", "टॉर्च", "flashlight") to "Toggles live in Quick Settings: swipe down from the top (twice for the full panel) and tap the tile. Long-press a tile for its settings.",
@@ -39,6 +39,28 @@ object Know {
         listOf("navigate", "रास्ता", "direction", "डायरेक्शन", "map") to "Maps: search box 'Search here', choose the result, 'Directions', pick the mode, then 'Start'.",
     )
 
+    private val HOWTO2 = listOf(
+        listOf("instagram", "इंस्टाग्राम", "insta") to "Instagram: bottom bar = Home, Reels, Post (+), Search, Profile. Search tab: type a name, tap the account. A post's heart = like, bubble = comment, paper plane = share/send, flag = save. Profile 'Follow' button; 'Message' button opens the DM.",
+        listOf("chrome", "browser", "ब्राउज़र", "website", "वेबसाइट") to "Chrome: address bar on top accepts a web address or search words; ⋮ menu has New tab, Downloads, History, Desktop site; tabs button (number in a box) shows open tabs.",
+        listOf("setting", "सेटिंग") to "Settings: search box at the top finds any option fast (type 'hotspot', 'battery', 'language'). Main groups: Network, Display, Sound, Apps, Battery, Accounts, System.",
+        listOf("brightness", "ब्राइटनेस", "volume", "वॉल्यूम", "silent", "साइलेंट", "dnd", "do not disturb") to "Brightness and volume have sliders in the Quick Settings panel (swipe down twice) and in Settings > Display / Sound. Do Not Disturb is a Quick Settings tile.",
+        listOf("battery", "बैटरी", "charge") to "Battery: Settings > Battery shows usage and has Battery saver. Zyro can also say the level directly.",
+        listOf("contact", "कॉन्टैक्ट", "number save", "नंबर सेव") to "Contacts app: + button adds a contact (Name, Phone, Save). Search box at the top. A contact's phone icon calls, message icon texts.",
+        listOf("sms", "text message") to "Messages app: Start chat button, enter the name or number, the box 'Text message', then the send arrow. Send only if the user asked.",
+        listOf("note", "नोट", "keep", "list", "लिस्ट") to "Notes/Keep: + or 'Take a note' button, write, then go back to save automatically.",
+        listOf("calendar", "कैलेंडर", "event", "reminder", "रिमाइंडर") to "Calendar: + button (or long-press a day) makes an event: Title, date, time, then Save. Reminders can also be set directly by Zyro.",
+        listOf("pay", "पेमेंट", "upi", "paytm", "phonepe", "gpay", "bhim", "send money", "पैसे भेज") to "MONEY APPS (UPI): NEVER enter a PIN, never confirm or send a payment. You may open the app and find the screen, then stop and tell the user to enter the PIN and confirm.",
+        listOf("order", "ऑर्डर", "buy", "खरीद", "cart", "checkout") to "SHOPPING: search, open the product, check price and delivery, Add to cart is fine. NEVER press Buy now / Place order / Pay; stop at the cart and tell the user.",
+        listOf("copy", "paste", "कॉपी", "पेस्ट", "select") to "Copy/paste: long-press text to select, drag the handles, tap Copy; long-press in a box and tap Paste.",
+        listOf("pdf", "file", "फाइल", "document", "डॉक्यूमेंट") to "Files app: Browse > Downloads/Documents; tap a file to open; ⋮ on a file has Share, Rename, Delete (ask before delete).",
+        listOf("wallpaper", "वॉलपेपर", "ringtone", "रिंगटोन") to "Wallpaper: long-press empty home screen > Wallpaper. Ringtone: Settings > Sound > Phone ringtone.",
+        listOf("language", "भाषा", "font") to "Language and font: Settings > System > Languages, and Settings > Display > Font size.",
+        listOf("hotstar", "netflix", "prime", "ott", "movie", "फिल्म", "series") to "Streaming apps: the magnifier searches titles; open the title, press Play. Some need a paid plan or sign-in: if a paywall or login shows, stop and tell the user.",
+        listOf("news", "खबर", "समाचार", "cricket", "क्रिकेट", "score", "स्कोर") to "News/score: Google search 'cricket score' shows a live card; for details open the match. Zyro can also answer by web search without opening apps.",
+    )
+
+    private const val YT_MAP = "YOUTUBE APP MAP (this phone): Bottom bar: Home, Shorts, + (create), Subscriptions, You. Home top: YouTube logo, bell (notifications), magnifier (search); chips All/Music/Mixes/Live. Search: type, then the keyboard Search key; results have chips All/Shorts/Unwatched/Videos and a ⋮ at the top right with Search filters (Type, Duration, Upload date, Prioritize, Features). A video in a list has its own ⋮ at the right. Video page: player on top (tap it for the controls: ⌄ minimise, cast, CC, ⚙ settings with Quality/Playback speed/Captions/Lock screen/More, ✕), then the title, channel row with Subscribe, Like, Dislike, Share, ✦ and ⋯; below it Comments (tap to open; the 'Comment...' box at the bottom, send arrow, ⋮ on your own comment: Edit/Share/Delete/Save); then suggested videos. Sponsored ads may play first: tap Skip when it appears. Shorts: vertical; on the right Like, Share, comments, Save, Remix; top-right ⋯; bottom: channel, Subscribe, title. You tab: profile, Switch account, History, Playlists (Liked videos, Watch later), Your videos, Downloads, Movies & TV, Clips, Time watched; ⚙ at the top right = Settings. Settings: General (reminders, Dark theme, App language, Location, Restricted Mode), Notifications, Purchases and memberships, Manage all history, Privacy, Video quality preferences (mobile data / Wi-Fi: Auto, Higher picture quality, Data saver), Playback (Autoplay, Double-tap seek, Zoom to fill, Picture-in-picture), Captions, Data saving, Downloads (Download quality: Ask each time / Medium 360p / Low 144p; Wi-Fi only), Live chat, Accessibility, Watch on TV, Help. Create (+): Video, Short, Live, Post; a Short has Add sound, flip, speed, timer, the red record button, Gallery 'Add'; then Next, Add details (title), Upload Short. Never confirm uploads, deletes (video/comment) or purchases without the user asking."
+
     /** Extra, compact phone-use skills that apply to every task. */
     private const val CORE = "PHONE SKILLS: (1) Prefer the app's search box over scrolling. (2) A bottom bar of 4-5 icons = the app's main sections; the top-right icons are usually search/notifications/menu. (3) ⋮ or ⋯ = More options; ≡ = menu; ← or < = back; ✕ = close. (4) A bottom sheet or dialog must be dealt with before anything behind it works. (5) Loading spinner = use wait, do not tap. (6) If an element is not in the list, it may need a scroll or a swipe; rows of buttons can scroll sideways. (7) Be fast: one decisive action per step, no repeating something that did nothing."
 
@@ -49,6 +71,7 @@ object Know {
         sb.append(CORE).append('\n')
         for ((keys, text) in WORDS) if (keys.any { t.contains(it) }) sb.append(text).append('\n')
         for ((keys, text) in HOWTO) if (keys.any { t.contains(it) }) sb.append(text).append('\n')
+        for ((keys, text) in HOWTO2) if (keys.any { t.contains(it) }) sb.append(text).append('\n')
         val app = when {
             pkg.contains("facebook.katana") || pkg.contains("facebook.lite") -> "Facebook: bottom/top tabs Home, Reels/Video, Friends, Marketplace, Notifications, Menu. Search = magnifier at the top. A post's Like/Comment/Share are under it."
             pkg.contains("telegram") -> "Telegram: search = magnifier at the top; chats list; message box 'Message'; send arrow on the right. Channels have no message box."
@@ -64,7 +87,8 @@ object Know {
             else -> null
         }
         if (app != null) sb.append(app).append('\n')
+        if (pkg.contains("google.android.youtube")) sb.append(YT_MAP).append('\n')
         if (pkg.contains("instagram") && has(t, "reel", "रील")) sb.append("Open Reels from the bottom bar (film/clapper icon), not from Home.\n")
-        return sb.toString().take(2400)
+        return sb.toString().take(5200)
     }
 }
