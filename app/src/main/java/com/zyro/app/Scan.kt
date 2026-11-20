@@ -34,7 +34,9 @@ object Scan {
 
     private const val SCAN_PROMPT = "यह फोटो ध्यान से देखो। अगर इसमें कुछ लिखा है (बिल, किताब, बोर्ड, लेबल, स्क्रीन), तो उसकी मुख्य बातें पढ़कर बताओ। " +
         "अगर कोई चीज़, जगह, पौधा, खाना या इंसान है, तो बताओ कि वह क्या है और काम की बात क्या है। " +
-        "हिंदी (थोड़ी English मिलाकर) में 3 से 4 छोटे वाक्यों में बताओ, जैसे दोस्त को बता रहे हो। कोई सूची, तारे या चिह्न मत लिखो।"
+        "अगर यह कोई फॉर्म है जिसमें खाली खाने हैं, तो बताओ कि कौन-कौन से खाने भरने हैं। " +
+        "हिंदी (थोड़ी English मिलाकर) में 3 से 4 छोटे वाक्यों में बताओ, जैसे दोस्त को बता रहे हो। कोई सूची, तारे या चिह्न मत लिखो। " +
+        "सिर्फ़ अगर फोटो किसी दुकान का बिल या रसीद है, तो सबसे आख़िर में एक अलग लाइन जोड़ो, ठीक इस रूप में: BILL|दुकान का नाम|कुल रकम सिर्फ़ अंक में। बाकी सब चीज़ों के लिए यह लाइन मत लिखो।"
     private const val MULTI_PROMPT = "ये कई फोटो एक साथ हैं। सबको मिलाकर देखो और बताओ कि कुल मिलाकर इनमें क्या है, और हर फोटो की ज़रूरी बात क्या है। " +
         "अगर इनमें लिखा हुआ है (बिल, पन्ने, लेबल), तो उसकी मुख्य बातें जोड़ो। हिंदी (थोड़ी English मिलाकर) में 4 से 5 छोटे वाक्यों में बताओ। कोई सूची, तारे या चिह्न मत लिखो।"
 
@@ -69,12 +71,44 @@ object Scan {
             else -> SCAN_PROMPT
         }
         val raw = try { Brain.describeImages(list, prompt) } catch (e: Exception) { "फोटो नहीं देख पाया।" }
-        val reply = if (doc) Pro.docReply(raw) else raw.replace(Regex("[*#]+"), "").trim()
+        var reply = if (doc) Pro.docReply(raw) else raw.replace(Regex("[*#]+"), "").trim()
+        // a bill: the last line carries the shop and the total; offer to note it as an expense
+        val m = Regex("BILL\\|([^|\\n]*)\\|\\s*([0-9][0-9,]*)").find(reply)
+        if (m != null) {
+            val amt = m.groupValues[2].replace(",", "").toIntOrNull() ?: 0
+            reply = reply.replace(Regex("BILL\\|[^\\n]*"), "").trim()
+            if (amt > 0) {
+                pendingBill = Pair(m.groupValues[1].trim().ifBlank { "बिल" }, amt)
+                pendingBillAt = System.currentTimeMillis()
+                reply = reply + " कुल $amt रुपये का बिल है। इसे खर्चे में लिख लूँ?"
+            }
+        }
         doc = false
         cam = null
         lastAnswer = reply
         lastAt = System.currentTimeMillis()
         return reply
+    }
+
+    @Volatile private var pendingBill: Pair<String, Int>? = null
+    @Volatile private var pendingBillAt = 0L
+
+    /** "haan" after "kharche mein likh loon?" notes the bill as an expense. */
+    fun handlePending(t: String, words: List<String>): String? {
+        val b = pendingBill ?: return null
+        if (System.currentTimeMillis() - pendingBillAt > 3 * 60_000L) { pendingBill = null; return null }
+        val ws = words.map { Local.strip(it) }
+        val yes = listOf("haan", "han", "ha", "yes", "ji", "ok", "okay", "kar do", "likh", "हाँ", "हां", "हा", "जी", "ठीक", "लिख", "कर दो").any { ws.contains(Local.strip(it)) }
+        val no = listOf("nahi", "nahin", "no", "mat", "नहीं", "मत").any { ws.contains(Local.strip(it)) }
+        if (no) { pendingBill = null; return "ठीक है, नहीं लिखा।" }
+        if (!yes) return null
+        pendingBill = null
+        return try {
+            val a = try { org.json.JSONArray(Prefs.expenses) } catch (e: Exception) { org.json.JSONArray() }
+            a.put(org.json.JSONObject().put("a", b.second).put("c", b.first).put("ts", System.currentTimeMillis()))
+            Prefs.expenses = a.toString()
+            "${b.first} के ${b.second} रुपये खर्चे में लिख लिए।"
+        } catch (e: Exception) { "लिख नहीं पाया।" }
     }
 
     fun follow(question: String): String {

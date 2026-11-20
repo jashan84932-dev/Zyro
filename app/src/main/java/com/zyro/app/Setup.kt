@@ -65,7 +65,7 @@ class SetupActivity : Activity() {
         window.statusBarColor = bg
         window.navigationBarColor = bg
         steps = listOf(
-            Step("माइक और अनुमतियाँ", "मुझे सुनने, कॉल, मैसेज और कैमरे के लिए अनुमति चाहिए। अगली स्क्रीन पर सबको 'Allow' दबा दो।", "अनुमति दो", { micOn(it) }, { Perms.request(it) }),
+            Step("माइक और अनुमतियाँ", "मुझे सुनने, कॉल, मैसेज और कैमरे के लिए अनुमति चाहिए। अगली स्क्रीन पर सबको 'Allow' दबा दो।", "अनुमति दो", { Setup.micOn(it) }, { Perms.request(it) }),
             Step("Accessibility", "इसी से मैं तुम्हारे कहने पर ऐप में टैप और स्क्रॉल कर पाता हूँ। लिस्ट में 'Zyro' खोलो और चालू कर दो।", "खोलो", { Setup.a11yOn(it) }, { it.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }),
             Step("नोटिफिकेशन पढ़ना", "ताकि नए मैसेज और कॉल मैं तुम्हें बोलकर बता सकूँ। लिस्ट में 'Zyro' चालू करो।", "खोलो", { Setup.notifOn(it) }, { it.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")) }),
             Step("दूसरे ऐप के ऊपर दिखना", "ताकि मैं किसी भी ऐप के ऊपर दिख सकूँ। 'Zyro' के आगे स्विच चालू करो।", "खोलो", { Setup.overlayOn(it) }, {
