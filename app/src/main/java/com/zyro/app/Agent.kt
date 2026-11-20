@@ -352,7 +352,19 @@ object Agent {
      * Search link (videos only, newest first when asked) then: first result's ⋮ -> "Download video" -> quality -> Download.
      * Returns the sentence to say when the download started, or null when any step was not there (the normal agent then continues from the open results).
      */
+    private fun waitEl(hands: Hands, ms: Long, pick: (List<El>) -> El?): El? {
+        val end = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < end && !cancelled) {
+            val o = observe(hands)
+            val el = o?.second?.let(pick)
+            if (el != null) return el
+            Thread.sleep(220)
+        }
+        return null
+    }
+
     private fun ytFastDownload(ctx: Context, hands: Hands, q: String, latest: Boolean, low144: Boolean): String? {
+        fun fl(m: String) { try { Assistant.get(ctx).note("⚙ fast download: $m") } catch (ex: Exception) { } }
         val e = java.net.URLEncoder.encode(q, "UTF-8")
         val sp = if (latest) "&sp=CAISAhAB" else "&sp=EgIQAQ%253D%253D"
         try {
@@ -360,36 +372,60 @@ object Agent {
             i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             i.setPackage("com.google.android.youtube")
             ctx.startActivity(i)
-        } catch (ex: Exception) { return null }
+        } catch (ex: Exception) { fl("could not open the search link"); return null }
         val dm = ctx.resources.displayMetrics
-        fun waitFor(ms: Long, pick: (List<El>) -> El?): El? {
-            val end = System.currentTimeMillis() + ms
-            while (System.currentTimeMillis() < end && !cancelled) {
-                val o = observe(hands)
-                val el = o?.second?.let(pick)
-                if (el != null) return el
-                Thread.sleep(220)
-            }
-            return null
-        }
-        val more = waitFor(10_000) { els ->
+        val more = waitEl(hands, 10_000) { els ->
             els.filter { val l = low(it.label); (l.contains("more options") || l.contains("action menu") || l == "more") && it.r.top > dm.heightPixels * 0.2 && it.r.centerX() > dm.widthPixels * 0.75 }
                 .minByOrNull { it.r.top }
-        } ?: return null
+        }
+        if (more == null) { fl("step 1 failed: no ⋮ on a result"); return null }
         tapEl(hands, more)
-        val dl = waitFor(3500) { els -> els.firstOrNull { val l = low(it.label); l.contains("download") && !l.contains("downloads") && !l.contains("downloaded") } } ?: return null
+        val dl = waitEl(hands, 3500) { els -> els.firstOrNull { val l = low(it.label); l.contains("download") && !l.contains("downloads") && !l.contains("downloaded") } }
+        if (dl == null) { fl("step 2 failed: menu has no 'Download video'"); return null }
         tapEl(hands, dl)
         val want = if (low144) "144p" else "360p"
-        val opt = waitFor(3000) { els -> els.firstOrNull { low(it.label).contains(want) } }
+        val opt = waitEl(hands, 3000) { els -> els.firstOrNull { low(it.label).contains(want) } }
         if (opt != null) {
             tapEl(hands, opt)
             Thread.sleep(250)
-            val go = waitFor(2500) { els -> els.firstOrNull { low(it.label).trim() == "download" && it.clickable } }
-                ?: waitFor(1000) { els -> els.firstOrNull { low(it.label).trim() == "download" } }
-            if (go != null) tapEl(hands, go) else return null
-        }
+            // the button; if it is not listed by name, press the spot to the right of Cancel (same row)
+            var go = waitEl(hands, 1800) { els -> els.filter { low(it.label).trim() == "download" }.maxByOrNull { it.r.top } }
+            if (go != null) tapEl(hands, go)
+            else {
+                val c = waitEl(hands, 1500) { els -> els.firstOrNull { low(it.label).trim() == "cancel" } }
+                if (c == null) { fl("step 4 failed: dialog has no Download or Cancel button"); return null }
+                hands.tap(c.r.centerX() + (dm.widthPixels * 0.457).toInt(), c.r.centerY())
+                fl("pressed the spot right of Cancel")
+            }
+        } else fl("no quality dialog; assumed the download started directly")
         Thread.sleep(700)
         return "डाउनलोड शुरू हो गया ($want)। YouTube में You टैब, फिर Downloads में दिखेगा।"
+    }
+
+    /** "YouTube Downloads kholo" / "YouTube Shorts kholo": straight to the tab, no AI calls. */
+    private fun ytQuick(ctx: Context, hands: Hands, jl: String): String? {
+        if (!(jl.contains("youtube") || jl.contains("यूट्यूब"))) return null
+        val padded = " $jl "
+        if (listOf(" aur ", " और ", " phir ", " फिर ", " then ", " and ").any { padded.contains(it) }) return null
+        val dm = ctx.resources.displayMetrics
+        val open = listOf("khol", "खोल", "open", "dikha", "दिखा", "dekh", "देख", "chala", "चला", "play").any { jl.contains(it) }
+        if (!open) return null
+        val wantDl = jl.contains("downloads") || jl.contains("डाउनलोड्स") || jl.contains("डाउनलोडेड")
+        val wantShorts = !wantDl && (jl.contains("shorts") || jl.contains("शॉर्ट"))
+        if (!wantDl && !wantShorts) return null
+        val r = openSmart(hands, "youtube")
+        if (!r.startsWith("Opened")) return null
+        fun bottom(name: String) = waitEl(hands, 6000) { els -> els.firstOrNull { low(it.label).trim().startsWith(name) && it.r.top > dm.heightPixels * 0.8 } }
+        if (wantShorts) {
+            val t = bottom("shorts") ?: return null
+            tapEl(hands, t)
+            return "Shorts खोल दिए।"
+        }
+        val you = bottom("you") ?: return null
+        tapEl(hands, you)
+        val d = waitEl(hands, 5000) { els -> els.firstOrNull { low(it.label).trim().startsWith("downloads") } } ?: return null
+        tapEl(hands, d)
+        return "Downloads खोल दिए।"
     }
 
     /**
@@ -612,6 +648,8 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         planThread?.start()
         // open the named app right away, no AI call needed for that
         val jl = low(job)
+        val quick = try { ytQuick(ctx, hands, jl) } catch (ex: Exception) { null }
+        if (quick != null) { say(quick); return }
         val ytdl = ytDownloadPlan(jl)
         if (ytdl != null) {
             val fast = try { ytFastDownload(ctx, hands, ytdl.first, ytdl.second, ytdl.third) } catch (ex: Exception) { null }
