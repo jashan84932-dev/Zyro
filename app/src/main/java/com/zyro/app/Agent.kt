@@ -423,6 +423,125 @@ object Agent {
         return "डाउनलोड शुरू हो गया ($want)। YouTube में You टैब, फिर Downloads में दिखेगा।"
     }
 
+
+    // ------------------------------------------------------------------ scripted Instagram (no AI call per step)
+
+    private val IG_STOP = setOf("instagram", "insta", "इंस्टाग्राम", "इंस्टा", "account", "अकाउंट", "profile", "प्रोफाइल", "id", "आईडी", "wala", "wali", "वाला", "वाली", "ka", "ki", "ko", "ke",
+        "ye", "yeh", "ise", "is", "isko", "इसको", "इसे", "reel", "reels", "रील", "रील्स", "search", "dhundo", "dhoondo", "khojo", "ढूंढो", "ढूँढो", "खोजो", "karo", "kar", "करो", "कर", "tab", "टैब")
+
+    /** "Instagram kholo / Reels chalao / is reel ko like-save-download karo / next reel / X search karo": straight taps, no AI. Null = let the normal agent do it. */
+    private fun igQuick(ctx: Context, hands: Hands, jl: String): String? {
+        val named = jl.contains("instagram") || jl.contains("insta") || jl.contains("इंस्टा")
+        val reelWord = (jl.contains("reel") || jl.contains("रील")) && !jl.contains("youtube") && !jl.contains("यूट्यूब")
+        if (!named && !reelWord) return null
+        val padded = " $jl "
+        if (listOf(" aur ", " और ", " phir ", " फिर ", " then ", " and ", "whatsapp", "व्हाट्सएप", "bhej", "भेज", "comment", "कमेंट", "message", "मैसेज", "post", "पोस्ट", "delete", "डिलीट", "log out", "logout", "password").any { padded.contains(it) }) return null
+        fun has(vararg k: String) = k.any { jl.contains(it) }
+        val dm = ctx.resources.displayMetrics
+        val w = dm.widthPixels
+        val h = dm.heightPixels
+        fun fl(m: String) { try { Assistant.get(ctx).note("⚙ insta: $m") } catch (ex: Exception) { } }
+        val wantDl = has("download", "डाउनलोड")
+        val wantLike = has("like", "लाइक")
+        val wantSave = !wantDl && has("save", "सेव")
+        val wantNext = has("next", "agli", "अगली", "अगला", "agla", "dusri", "दूसरी", "skip")
+        val wantSearch = !wantDl && has("search", "dhund", "dhond", "ढूं", "ढूँ", "khoj", "खोज")
+        val openWord = has("khol", "खोल", "open", "chala", "चला", "dekh", "देख", "dikha", "दिखा", "laga", "लगा", "play")
+        val tabName = when {
+            has("reel", "रील") -> 1
+            has("message", "मैसेज", "inbox", "dm") -> 2
+            has("saved", "सेव्ड") -> 5
+            has("profile", "प्रोफाइल") -> 4
+            has("home", "होम", "feed", "फीड") -> 0
+            else -> -1
+        }
+        val acting = wantDl || wantLike || wantSave || wantNext
+        if (!acting && !wantSearch && !(openWord && (tabName >= 0 || named))) return null
+
+        val r = openSmart(hands, "instagram")
+        if (!r.startsWith("Opened")) return null
+        Thread.sleep(900)
+        fun bottomTab(i: Int, names: List<String>): String {
+            val el = waitEl(hands, 5000) { els -> els.firstOrNull { e -> e.r.top > h * 0.84 && e.r.bottom < h * 0.97 && names.any { low(e.label).trim().startsWith(it) } } }
+            if (el != null) return tapEl(hands, el)
+            return hands.tap(((i * 2 + 1) * w) / 10, (h * 0.917).toInt())
+        }
+        fun goTab(t: Int) {
+            when (t) {
+                0 -> bottomTab(0, listOf("home"))
+                1 -> bottomTab(1, listOf("reels", "reel"))
+                2 -> bottomTab(2, listOf("messages", "message", "direct"))
+                3 -> bottomTab(3, listOf("search", "explore"))
+                4 -> bottomTab(4, listOf("profile"))
+            }
+        }
+        fun rightEdge(vararg keys: String): El? = waitEl(hands, 3500) { els ->
+            els.firstOrNull { e -> e.r.centerX() > w * 0.8 && e.r.centerY() > h * 0.12 && e.r.centerY() < h * 0.9 && keys.any { k -> low(e.label).trim().startsWith(k) } }
+        }
+
+        if (wantLike || wantSave || wantDl || wantNext) {
+            // act on whatever reel/post is on screen; if Instagram just opened, go to Reels first
+            if (openWord && has("reel", "रील") && !wantNext) { goTab(1); Thread.sleep(1500) }
+            if (wantNext) {
+                hands.swipe(w / 2, (h * 0.75).toInt(), w / 2, (h * 0.25).toInt(), 260)
+                Thread.sleep(900)
+                if (!wantLike && !wantSave && !wantDl) return "अगली रील।"
+            }
+            if (wantLike) {
+                val liked = rightEdge("liked", "unlike")
+                if (liked != null) return "ये रील पहले से लाइक है।"
+                val el = rightEdge("like")
+                if (el == null) { fl("like button not found"); return null }
+                tapEl(hands, el); Thread.sleep(500)
+                return "लाइक कर दिया।"
+            }
+            if (wantSave) {
+                val el = rightEdge("save", "add to saved", "bookmark")
+                if (el == null) { fl("save button not found"); return null }
+                tapEl(hands, el); Thread.sleep(500)
+                return "सेव कर दिया।"
+            }
+            if (wantDl) {
+                val sh = rightEdge("share", "send") ?: run { fl("share button not found"); return null }
+                tapEl(hands, sh)
+                var dl: El? = null
+                for (i in 0 until 4) {
+                    dl = waitEl(hands, if (i == 0) 3500 else 1200) { els -> els.firstOrNull { e -> val l = low(e.label).trim(); l.startsWith("download") && !l.startsWith("downloads") && e.r.top > h * 0.55 } }
+                    if (dl != null) break
+                    hands.swipe((w * 0.85).toInt(), (h * 0.92).toInt(), (w * 0.15).toInt(), (h * 0.92).toInt(), 250)
+                    Thread.sleep(500)
+                }
+                if (dl == null) { hands.press("back"); return "इस रील में Download का ऑप्शन नहीं है, बनाने वाले ने बंद किया है।" }
+                tapEl(hands, dl)
+                Thread.sleep(1500)
+                return "डाउनलोड शुरू कर दिया, गैलरी में दिखेगा।"
+            }
+        }
+        if (wantSearch) {
+            val q = jl.split(Regex("[\\s,।.!?]+")).filter { it.isNotEmpty() && it !in FAST_STOP && it !in IG_STOP }.joinToString(" ")
+            if (q.isEmpty() || q.split(" ").size > 5) return null
+            goTab(3)
+            val box = waitEl(hands, 5000) { els -> els.firstOrNull { e -> e.r.top < h * 0.25 && low(e.label).contains("search") } } ?: run { fl("search box not found"); return null }
+            tapEl(hands, box); Thread.sleep(500)
+            hands.typeText(q)
+            val first = q.split(" ")[0]
+            val res = waitEl(hands, 6000) { els -> els.firstOrNull { e -> !e.editable && e.r.top > h * 0.12 && e.r.top < h * 0.6 && low(e.label).contains(first) && !low(e.label).contains("search") } }
+            if (res == null) { fl("no result row for $q"); return null }
+            tapEl(hands, res); Thread.sleep(1200)
+            return "$q का अकाउंट खोल दिया।"
+        }
+        if (tabName == 5) {
+            goTab(4)
+            val menu = waitEl(hands, 5000) { els -> els.firstOrNull { e -> e.r.top < h * 0.15 && e.r.centerX() > w * 0.85 && (low(e.label).contains("menu") || low(e.label).contains("options") || low(e.label).contains("settings")) } }
+            if (menu == null) hands.tap((w * 0.93).toInt(), (h * 0.075).toInt()) else tapEl(hands, menu)
+            val sv = waitEl(hands, 4000) { els -> els.firstOrNull { e -> low(e.label).trim().startsWith("saved") } } ?: return null
+            tapEl(hands, sv)
+            return "Saved खोल दिया।"
+        }
+        if (tabName >= 0) { goTab(tabName); return when (tabName) { 1 -> "Reels खोल दी।"; 2 -> "Messages खोल दिए।"; 4 -> "Profile खोल दी।"; else -> "Home खोल दिया।" } }
+        return "Instagram खोल दिया।"
+    }
+
     /** "YouTube Downloads kholo" / "YouTube Shorts kholo": straight to the tab, no AI calls. */
     private fun ytQuick(ctx: Context, hands: Hands, jl: String): String? {
         val named = jl.contains("youtube") || jl.contains("यूट्यूब")
@@ -673,6 +792,8 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         val jl = low(job)
         val quick = try { ytQuick(ctx, hands, jl) } catch (ex: Exception) { null }
         if (quick != null) { say(quick); return }
+        val igq = try { igQuick(ctx, hands, jl) } catch (ex: Exception) { null }
+        if (igq != null) { say(igq); return }
         val ytdl = ytDownloadPlan(jl)
         if (ytdl != null) {
             val fast = try { ytFastDownload(ctx, hands, ytdl.first, ytdl.second, ytdl.third) } catch (ex: Exception) { null }
