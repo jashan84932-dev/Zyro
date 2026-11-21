@@ -423,7 +423,7 @@ object Live {
                     else if (h == null || c == null || task.isBlank()) "no task"
                     else {
                         val r = Agent.start(c, h, task)
-                        if (Agent.running) "STARTED. The agent is now working on the whole job in the background. Do NOT speak and do NOT call any tool for this job. Stay completely silent until a [System notice] tells you the result."
+                        if (Agent.running) "STARTED. The agent is now working on the whole job in the background. Nothing is done yet: never say that anything started, finished or downloaded. Do NOT speak and do NOT call any tool for this job. Stay completely silent until a [System notice] tells you the result."
                         else r
                     }
                 }

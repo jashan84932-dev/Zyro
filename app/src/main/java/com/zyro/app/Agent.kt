@@ -374,14 +374,33 @@ object Agent {
             ctx.startActivity(i)
         } catch (ex: Exception) { fl("could not open the search link"); return null }
         val dm = ctx.resources.displayMetrics
-        val more = waitEl(hands, 10_000) { els ->
-            els.filter { val l = low(it.label); (l.contains("more options") || l.contains("action menu") || l == "more") && it.r.top > dm.heightPixels * 0.2 && it.r.centerX() > dm.widthPixels * 0.75 }
-                .minByOrNull { it.r.top }
+        fun moreBtns(els: List<El>) = els.filter {
+            val l = low(it.label)
+            (l.contains("more options") || l.contains("action menu") || l == "more") && it.r.top > dm.heightPixels * 0.2 && it.r.centerX() > dm.widthPixels * 0.75
+        }.sortedBy { it.r.top }
+        var dl: El? = null
+        val dlPick = { els: List<El> -> els.firstOrNull { val l = low(it.label); l.contains("download") && !l.contains("downloads") && !l.contains("downloaded") } }
+        // try the first few videos: a live stream or a video that does not allow downloads has a menu without 'Download video'
+        for (idx in 0..3) {
+            val more = waitEl(hands, if (idx == 0) 10_000 else 3000) { els -> moreBtns(els).getOrNull(idx) } ?: break
+            Thread.sleep(600) // the list is still settling when the first button shows
+            tapEl(hands, more)
+            dl = waitEl(hands, 2500, dlPick)
+            if (dl == null) {
+                hands.tap(more.r.centerX(), more.r.centerY())
+                dl = waitEl(hands, 2000, dlPick)
+            }
+            if (dl != null) break
+            val o = observe(hands)
+            val sheet = o?.second?.any { val l = low(it.label); l.contains("share") || l.contains("report") || l.contains("save to") || l.contains("play next") } == true
+            fl("video ${idx + 1}: its menu has no 'Download video'" + (if (sheet) " (live or not allowed); trying the next video" else ""))
+            if (sheet) { hands.press("back"); Thread.sleep(500) }
         }
-        if (more == null) { fl("step 1 failed: no ⋮ on a result"); return null }
-        tapEl(hands, more)
-        val dl = waitEl(hands, 3500) { els -> els.firstOrNull { val l = low(it.label); l.contains("download") && !l.contains("downloads") && !l.contains("downloaded") } }
-        if (dl == null) { fl("step 2 failed: menu has no 'Download video'"); return null }
+        if (dl == null) {
+            val seen = try { (observe(hands)?.second ?: emptyList()).map { it.label.trim().take(20) }.filter { it.isNotEmpty() }.distinct().take(14).joinToString(" | ") } catch (ex: Exception) { "" }
+            fl("step 1/2 failed. On screen: $seen")
+            return null
+        }
         tapEl(hands, dl)
         val want = if (low144) "144p" else "360p"
         val opt = waitEl(hands, 3000) { els -> els.firstOrNull { low(it.label).contains(want) } }
