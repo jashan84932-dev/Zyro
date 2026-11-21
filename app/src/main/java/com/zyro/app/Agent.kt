@@ -324,6 +324,8 @@ object Agent {
         }
         val q = words.filter { it !in FAST_STOP }.joinToString(" ")
         if (q.isEmpty() || q.split(" ").size > 7) return null
+        // "shorts chalao" means the Shorts tab, not a search for the word shorts
+        if (app == "youtube" && q.split(" ").all { it in setOf("shorts", "short", "शॉर्ट्स", "शॉर्ट", "शार्ट्स", "reels", "रील्स") }) return null
         return Pair(app, q)
     }
 
@@ -423,7 +425,9 @@ object Agent {
 
     /** "YouTube Downloads kholo" / "YouTube Shorts kholo": straight to the tab, no AI calls. */
     private fun ytQuick(ctx: Context, hands: Hands, jl: String): String? {
-        if (!(jl.contains("youtube") || jl.contains("यूट्यूब"))) return null
+        val named = jl.contains("youtube") || jl.contains("यूट्यूब")
+        val shortsOnly = !named && (jl.contains("shorts") || jl.contains("शॉर्ट")) && listOf("instagram", "insta", "reel", "रील", "facebook", "snap").none { jl.contains(it) }
+        if (!named && !shortsOnly) return null
         val padded = " $jl "
         if (listOf(" aur ", " और ", " phir ", " फिर ", " then ", " and ").any { padded.contains(it) }) return null
         val dm = ctx.resources.displayMetrics
