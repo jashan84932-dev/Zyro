@@ -40,6 +40,7 @@ object Extras {
 
     /** Called first for every sentence: answers "haan bhejo" / "nahi" after a WhatsApp draft. */
     fun handlePending(hands: Hands, t: String, words: List<String>): String? {
+        Mission.handlePending(t, words)?.let { return it }
         Trip.handlePending(t, words)?.let { return it }
         Scan.handlePending(t, words)?.let { return it }
         Agent.handlePending(t, words)?.let { return it }
@@ -86,9 +87,12 @@ object Extras {
         fun word(vararg w: String) = w.any { x -> words.contains(strip(x)) }
 
         // ----- calls, SMS, OTP, navigation, habits -----
+        Mission.handle(ctx, hands, t, raw)?.let { return it }
         Trip.handle(ctx, t, raw)?.let { return it }
         Busy.handle(hands, t, words, raw)?.let { return it }
         Nudge.handle(t)?.let { return it }
+        Cal.handle(ctx, t)?.let { return it }
+        Inbox.handle(ctx, t)?.let { return it }
         VoicePrint.handle(ctx, t)?.let { return it }
         Setup.handle(ctx, t)?.let { return it }
         Github.handle(ctx, t, raw)?.let { return it }
@@ -330,6 +334,7 @@ object Extras {
         sb.append(Local.timeReply()).append(" ")
         weather()?.let { sb.append("मौसम: ").append(it).append("। ") }
         sb.append(Jarvis.dayExtras(ctx))
+        try { sb.append(Cal.todayLine(ctx)) } catch (e: Exception) { }
         sb.append(batteryReply(ctx))
         return sb.toString()
     }

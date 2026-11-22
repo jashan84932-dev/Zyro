@@ -150,7 +150,8 @@ class ReactorView(context: Context) : View(context) {
 
         val pulse = 0.5f + 0.5f * sin(t * 2.6f + en * 2f)
         // glow
-        layer(c, glowB, size, 0f, 1f + 0.06f * en, (0.6f + 0.7f * en) * ie)
+        layer(c, glowB, size, 0f, 1.04f + 0.06f * en, (0.9f + 0.3f * en) * ie)
+        layer(c, glowB, size, 0f, 1f + 0.04f * en, (0.4f + 0.2f * en) * ie)
         // outer rings turn one way, inner rings the other
         layer(c, outerB, size, spinA, 1f, ie)
         layer(c, innerB, size, spinB, 1f, ie)
@@ -162,6 +163,9 @@ class ReactorView(context: Context) : View(context) {
         // the core grows and brightens with energy
         layer(c, coreB, size, 0f, 1f + 0.35f * en + 0.15f * flare, (0.75f + 0.25f * pulse) * ie)
         if (en > 0.55f) layer(c, coreB, size, 0f, 0.8f + 0.25f * en, (en - 0.55f) * 1.6f * ie)
+        // soft bloom round the core
+        layer(c, coreB, size, 0f, 1.25f + 0.35f * en, (0.38f + 0.1f * pulse) * ie)
+        layer(c, coreB, size, 0f, 1.6f + 0.35f * en, (0.3f + 0.08f * pulse) * ie)
 
         // shock rings when Zyro starts listening, thinking or speaking
         val R = size / 2f

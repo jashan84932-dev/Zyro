@@ -21,6 +21,9 @@ object Agent {
         private set
     @Volatile private var visionAsked = 0L
     @Volatile private var cancelled = false
+    val wasCancelled: Boolean get() = cancelled
+    /** The last thing the agent said: Mission uses it as the result of a step. */
+    @Volatile var lastSay = ""
     @Volatile private var awaiting: String? = null // question waiting for yes/no
     @Volatile private var answer: Boolean? = null
     @Volatile private var userReply: String? = null
@@ -163,6 +166,7 @@ object Agent {
 
     private fun say(text: String) {
         val c = appCtx ?: return
+        lastSay = text
         Assistant.get(c).announce(text)
     }
 
@@ -542,6 +546,92 @@ object Agent {
         return "Instagram खोल दिया।"
     }
 
+
+    // ------------------------------------------------------------------ scripted WhatsApp (no AI call per step)
+
+    private val WA_STOP = setOf("whatsapp", "व्हाट्सएप", "व्हाट्सऐप", "वॉट्सऐप", "वाट्सएप", "chat", "चैट", "chats", "kholo", "खोलो", "khol", "खोल", "open", "karo", "kar", "करो", "कर", "ka", "ki", "ke", "ko", "ka", "का", "की", "के", "को",
+        "dikha", "dikhao", "दिखाओ", "dekho", "देखो", "status", "स्टेटस", "wala", "wali", "वाला", "वाली", "me", "mein", "में", "pe", "par", "पर", "se", "से", "ye", "is", "isko", "tab", "टैब", "unread", "favorites", "groups")
+
+    /** "WhatsApp kholo / Updates / Calls / Unread chats / Groups / Rajeev ki chat kholo / Rajeev ka status dekho / Settings": straight taps, no AI. Sending, calling, deleting go through the normal (confirmed) paths. */
+    private fun waQuick(ctx: Context, hands: Hands, jl: String): String? {
+        if (!(jl.contains("whatsapp") || jl.contains("व्हाट्सएप") || jl.contains("व्हाट्सऐप") || jl.contains("वॉट्सऐप") || jl.contains("वाट्सएप"))) return null
+        val padded = " $jl "
+        if (listOf(" aur ", " और ", " phir ", " फिर ", " then ", " and ", "bhej", "भेज", "send", "likh", "लिख", "message", "मैसेज", "call", "कॉल", "voice", "वॉइस", "block", "ब्लॉक", "delete", "डिलीट", "clear", "post", "पोस्ट", "payment", "पेमेंट", "password", "logout", "log out", "download", "डाउनलोड").any { padded.contains(it) }) return null
+        fun has(vararg k: String) = k.any { jl.contains(it) }
+        val dm = ctx.resources.displayMetrics
+        val w = dm.widthPixels
+        val h = dm.heightPixels
+        fun fl(m: String) { try { Assistant.get(ctx).note("⚙ whatsapp: $m") } catch (ex: Exception) { } }
+        val chip = when {
+            has("unread", "अनरीड", "अनपढ़ी") -> "unread"
+            has("favorite", "favourite", "फेवरेट") -> "favorites"
+            has("group", "ग्रुप") -> "groups"
+            else -> ""
+        }
+        val tab = when {
+            has("calls", "call history", "call log", "कॉल हिस्ट्री", "कॉल लॉग") -> 3
+            has("communit", "कम्युनिटी") -> 2
+            has("updates", "अपडेट", "status", "स्टेटस") -> 1
+            has("settings", "सेटिंग") -> 9
+            else -> 0
+        }
+        val q = jl.split(Regex("[\\s,।.!?]+")).filter { it.isNotEmpty() && it !in FAST_STOP && it !in WA_STOP }.joinToString(" ")
+        val openChat = has("chat", "चैट") && q.isNotEmpty() && chip.isEmpty()
+        val statusOf = has("status", "स्टेटस") && q.isNotEmpty()
+        val openWord = has("khol", "खोल", "open", "dikha", "दिखा", "dekh", "देख", "chala", "चला", "laga", "लगा", "show")
+        if (!openWord && !openChat && !statusOf) return null
+        if (q.split(" ").size > 4) return null
+
+        val r = openSmart(hands, "whatsapp")
+        if (!r.startsWith("Opened")) return null
+        Thread.sleep(900)
+        val tabNames = listOf("chats", "updates", "communities", "calls")
+        fun bottomTab(i: Int): Boolean {
+            for (attempt in 0 until 3) {
+                val el = waitEl(hands, if (attempt == 0) 3000 else 1800) { els -> els.firstOrNull { e -> e.r.top > h * 0.84 && e.r.bottom < h * 0.97 && low(e.label).trim().startsWith(tabNames[i]) } }
+                if (el != null) { tapEl(hands, el); return true }
+                hands.press("back"); Thread.sleep(500)   // inside a chat/search: come back out
+            }
+            hands.tap(((i * 2 + 1) * w) / 8, (h * 0.915).toInt())
+            return true
+        }
+        fun menuSettings(): String? {
+            val more = waitEl(hands, 4000) { els -> els.firstOrNull { e -> e.r.top < h * 0.14 && e.r.centerX() > w * 0.88 && (low(e.label).contains("more options") || low(e.label).contains("menu")) } }
+            if (more == null) hands.tap((w * 0.95).toInt(), (h * 0.075).toInt()) else tapEl(hands, more)
+            val st = waitEl(hands, 4000) { els -> els.firstOrNull { e -> low(e.label).trim() == "settings" } } ?: run { fl("Settings item not found"); return null }
+            tapEl(hands, st)
+            return "WhatsApp Settings खोल दी।"
+        }
+
+        if (tab == 9) { bottomTab(0); return menuSettings() }
+        if (statusOf) {
+            bottomTab(1)
+            val first = q.split(" ")[0]
+            val row = waitEl(hands, 5000) { els -> els.firstOrNull { e -> e.r.top > h * 0.2 && e.r.top < h * 0.9 && low(e.label).contains(first) } } ?: run { fl("no status row for $q"); return null }
+            tapEl(hands, row); Thread.sleep(800)
+            return "$q का स्टेटस खोल दिया।"
+        }
+        if (openChat) {
+            bottomTab(0)
+            val box = waitEl(hands, 5000) { els -> els.firstOrNull { e -> e.r.top < h * 0.25 && low(e.label).contains("search") } } ?: run { fl("search box not found"); return null }
+            tapEl(hands, box); Thread.sleep(500)
+            hands.typeText(q)
+            val first = q.split(" ")[0]
+            val res = waitEl(hands, 6000) { els -> els.firstOrNull { e -> !e.editable && e.r.top > h * 0.2 && e.r.top < h * 0.8 && low(e.label).contains(first) && !low(e.label).contains("meta ai") && !low(e.label).contains("search") } }
+            if (res == null) { fl("no chat row for $q"); return null }
+            tapEl(hands, res); Thread.sleep(900)
+            return "$q की चैट खोल दी।"
+        }
+        if (chip.isNotEmpty()) {
+            bottomTab(0)
+            val c = waitEl(hands, 5000) { els -> els.firstOrNull { e -> e.r.top > h * 0.1 && e.r.top < h * 0.35 && low(e.label).trim().startsWith(chip) } } ?: run { fl("chip $chip not found"); return null }
+            tapEl(hands, c); Thread.sleep(600)
+            return when (chip) { "unread" -> "Unread चैट्स दिखा दीं।"; "favorites" -> "Favorites दिखा दिए।"; else -> "ग्रुप्स दिखा दिए।" }
+        }
+        bottomTab(tab)
+        return when (tab) { 1 -> "Updates (स्टेटस) खोल दिए।"; 2 -> "Communities खोल दी।"; 3 -> "Calls खोल दीं।"; else -> "WhatsApp खोल दिया।" }
+    }
+
     /** "YouTube Downloads kholo" / "YouTube Shorts kholo": straight to the tab, no AI calls. */
     private fun ytQuick(ctx: Context, hands: Hands, jl: String): String? {
         val named = jl.contains("youtube") || jl.contains("यूट्यूब")
@@ -794,6 +884,8 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         if (quick != null) { say(quick); return }
         val igq = try { igQuick(ctx, hands, jl) } catch (ex: Exception) { null }
         if (igq != null) { say(igq); return }
+        val waq = try { waQuick(ctx, hands, jl) } catch (ex: Exception) { null }
+        if (waq != null) { say(waq); return }
         val ytdl = ytDownloadPlan(jl)
         if (ytdl != null) {
             val fast = try { ytFastDownload(ctx, hands, ytdl.first, ytdl.second, ytdl.third) } catch (ex: Exception) { null }
@@ -1180,7 +1272,7 @@ Rules:
         pkg.contains("youtube") -> "HOW TO DOWNLOAD (checked on a real phone): there is NO Download button in the row under the video (that row is: channel photo, Subscribe, Like, Dislike, Share, a sparkle icon, and a ⋯ More button). Route A, on the open video page: tap the ⋯ (More / three dots) button at the right end of that row; a sheet opens with Save, Thanks, Download, Report; tap Download. Route B, in search results, a channel page or a list: tap the ⋮ (More options) at the right of the video's title; the menu shows Play next in queue, Save to Watch later, Save to playlist, Download video, Share, Remix, Report; tap 'Download video'. Route B is faster, use it when you are on a list. Then a 'Download quality' dialog appears: choose 'Medium (360p)' (the free maximum) or 'Low (144p)'; the 720p/1080p options are YouTube Premium only, never pick them; then tap the Download button at the bottom of the dialog. If the user asked 360p pick Medium (360p). It is done when the dialog closes and a download starts; downloaded videos are listed in You tab > Downloads. Shorts cannot be downloaded (their ⋯ menu has only Description, Captions, Quality, Not interested, Don't recommend, Report): tell the user honestly. Live streams and some videos do not allow it. The player must be NOT full screen and the video must be open for Route A. Search is the magnifier at the top right; type_enter in the box; results are a vertical list, tap a video TITLE. If a 'Skip ad' / 'Skip' button shows, tap it (ads can last up to 5 s). The video plays by itself; done = the player is on screen and playing."
         pkg.contains("hotstar") -> "After opening choose the profile if asked. Live and sports are under the Sports / Cricket / Live rows or tabs; use Search (magnifier) for a match or show name. A 'Subscribe' wall means no subscription: do not pay, tell the user. Login is by phone number + OTP: use ask_user."
         pkg.contains("instagram") -> "Bottom bar: Home, Reels, Search, Profile. Reels are full-screen videos: swipe up (scroll_down) for the next one. Search = magnifier tab, type the name, tap the account (not the posts)."
-        pkg.contains("whatsapp") -> "Search = magnifier at the top; tap the chat; message box says 'Type a message'; send is the green arrow button (label 'Send'). Never send unless the task says to send."
+        pkg.contains("whatsapp") -> "Search = the box 'Ask Meta AI or Search' at the top of Chats; tap the chat row; the message box says 'Message'; send is the green arrow (label 'Send') that appears after you type; the green mic needs a long press. Tabs at the bottom: Chats, Updates, Communities, Calls. Never send unless the task says to send."
         pkg.contains("chrome") -> "The address bar is labelled 'Search or type URL' (first tap it). Use type_enter. Web page content may not be readable: use wait, scroll_find, or the screenshot (tap_norm)."
         pkg.contains("settings") -> "Use the search icon at the top for any setting instead of scrolling menus."
         pkg.contains("vending") -> "Play Store: search bar at the top; the green 'Install' button on the app page; 'Open' appears when done."
