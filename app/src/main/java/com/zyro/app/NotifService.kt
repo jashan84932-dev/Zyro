@@ -12,6 +12,11 @@ class NotifService : NotificationListenerService() {
     companion object {
         @Volatile var last: LastMsg? = null
         val recent = ArrayList<String>()
+
+        /** One notification kept in memory for "kisi ka message aaya?" (24 h, 80 items, never saved or sent anywhere). */
+        class Item(val pkg: String, val app: String, val who: String, val text: String, val at: Long, val chat: Boolean)
+
+        val log = ArrayList<Item>()
         private val MSG_APPS = setOf(
             "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger", "com.facebook.orca",
             "com.google.android.apps.messaging", "com.android.mms", "com.samsung.android.messaging"
@@ -49,6 +54,14 @@ class NotifService : NotificationListenerService() {
                 last = LastMsg(s.packageName, app, title, text, act, System.currentTimeMillis())
                 Genius.onMessage(applicationContext, s.packageName, title, text, act)
             }
+        }
+        synchronized(log) {
+            val isChat = n.category == Notification.CATEGORY_MESSAGE || s.packageName in MSG_APPS
+            val dup = log.lastOrNull()?.let { it.pkg == s.packageName && it.who == title && it.text == text } ?: false
+            if (!dup) log.add(Item(s.packageName, app, title, text, System.currentTimeMillis(), isChat))
+            val cut = System.currentTimeMillis() - 24 * 3600_000L
+            log.removeAll { it.at < cut }
+            while (log.size > 80) log.removeAt(0)
         }
         synchronized(recent) {
             recent.add("$app: $title $text".trim())
