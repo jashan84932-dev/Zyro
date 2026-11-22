@@ -88,6 +88,7 @@ object Extras {
 
         // ----- calls, SMS, OTP, navigation, habits -----
         Mission.handle(ctx, hands, t, raw)?.let { return it }
+        Duet.handle(ctx, hands, t, raw)?.let { return it }
         Trip.handle(ctx, t, raw)?.let { return it }
         Busy.handle(hands, t, words, raw)?.let { return it }
         Nudge.handle(t)?.let { return it }

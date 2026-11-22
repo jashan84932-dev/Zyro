@@ -349,6 +349,8 @@ object Agent {
         val latest = listOf("nai ", "nayi", "naya", "नई", "नयी", "नया", "new", "latest").any { padded.contains(it) }
         val low144 = jl.contains("144")
         val words = jl.split(Regex("[\\s,।.!?]+")).filter { it.isNotEmpty() }
+        // "meri / mere / apni video": the user's OWN video, not a search word -> let the normal agent handle it
+        if (words.any { it in setOf("meri", "mera", "mere", "मेरी", "मेरा", "मेरे", "apni", "apna", "अपनी", "अपना", "my") }) return null
         val q = words.filter { it !in FAST_STOP && it !in YT_DL_STOP }.joinToString(" ")
         if (q.isEmpty() || q.split(" ").size > 6) return null
         return Triple(q, latest, low144)

@@ -26,7 +26,7 @@ object Genie {
         fever(ctx, t, raw)?.let { return it }
 
         // ----- hologram mode -----
-        if (has(t, "hologram", "होलोग्राम", "holo", "होलो") && !has(t, "kaise", "कैसे")) {
+        if (has(t, "hologram", "होलोग्राम") && has(t, "chalao", "चलाओ", "chalu", "चालू", "mode", "मोड", "on", "dikhao", "दिखाओ", "start", "शुरू", "kholo", "खोलो", "lagao", "लगाओ") && !has(t, "kaise", "कैसे", "kya hai", "क्या है")) {
             hands.openActivity(Intent(ctx, HoloActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             return "फोन को सीधा लिटाओ और बीच में पिरामिड रखो। बंद करने के लिए स्क्रीन छू लो।"
         }
