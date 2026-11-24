@@ -93,6 +93,45 @@ object Memory {
         saveFacts(list)
     }
 
+    /** What the user just said; Brain sets it so the prompt can pick the facts that matter for it. */
+    @Volatile var lastQuery = ""
+
+    private val stop = setOf(
+        "hai", "hain", "ho", "hu", "hoon", "ka", "ki", "ke", "ko", "se", "me", "mein", "par", "pe", "aur", "ya",
+        "to", "toh", "ye", "yeh", "wo", "woh", "kya", "kyun", "nahi", "nhi", "bhi", "the", "is", "are", "and",
+        "for", "you", "your", "with", "that", "this", "user", "jashan"
+    )
+
+    /**
+     * Picks at most [max] facts for the prompt: the newest few always, then the older ones that share
+     * words with [query]. With 150 saved facts this keeps older but relevant facts (project, phone,
+     * family) in reach and keeps the prompt short, so replies start sooner.
+     */
+    fun recall(query: String, max: Int = 30): List<String> {
+        val all = facts()
+        if (all.size <= max) return all
+        val qt = tokens(query).filter { it !in stop }.toSet()
+        val keep = HashSet<Int>()
+        val newest = minOf(10, max)
+        for (i in all.size - newest until all.size) keep.add(i)
+        if (qt.isNotEmpty()) {
+            val scored = ArrayList<Pair<Int, Int>>() // index to score
+            for (i in 0 until all.size - newest) {
+                val score = tokens(all[i]).count { it in qt }
+                if (score > 0) scored.add(i to score)
+            }
+            scored.sortWith(compareByDescending<Pair<Int, Int>> { it.second }.thenByDescending { it.first })
+            for ((i, _) in scored) {
+                if (keep.size >= max) break
+                keep.add(i)
+            }
+        }
+        // fill any remaining room with the next newest facts
+        var j = all.size - newest - 1
+        while (keep.size < max && j >= 0) { keep.add(j); j-- }
+        return keep.sorted().map { all[it] }
+    }
+
     /** Removes every remembered fact containing [match]. Returns how many were removed. */
     fun forget(match: String): Int {
         val m = match.trim().lowercase()

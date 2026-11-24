@@ -43,6 +43,7 @@ class NotifService : NotificationListenerService() {
         } catch (ex: Exception) {
             s.packageName
         }
+        try { Pro.onNotification(app, title, text) } catch (ex: Exception) { /* rules are optional */ }
         if ((Prefs.readAloud || Gestures.pocketActive()) && (n.category == Notification.CATEGORY_MESSAGE || s.packageName in MSG_APPS)) {
             val say = (if (title.isBlank()) "$app पर नया मैसेज: $text" else "$app पर $title: $text").take(170)
             Assistant.get(applicationContext).announce(say)

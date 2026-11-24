@@ -1,10 +1,12 @@
 package com.zyro.app
 
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import android.os.Bundle
 import org.json.JSONArray
 import org.json.JSONObject
@@ -383,6 +385,39 @@ object Pro {
 
     private fun rules(): JSONArray = try { JSONArray(Prefs.rules) } catch (e: Exception) { JSONArray() }
 
+    private fun kwTxt(o: JSONObject): String {
+        val k = o.optString("kw")
+        return if (k.isBlank()) "" else " ($k)"
+    }
+
+    private val lastFire = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+
+    /** Runs one rule, but never twice within 45 seconds (a Bluetooth link or a chatty app can fire many times). */
+    private fun runRule(o: JSONObject) {
+        val id = o.optLong("id")
+        val now = System.currentTimeMillis()
+        val prev = lastFire[id] ?: 0L
+        if (now - prev < 45_000L) return
+        lastFire[id] = now
+        runCmd(o.optString("cmd"))
+    }
+
+    /** True when every word of [kw] appears in [hay]. */
+    private fun kwMatch(kw: String, hay: String): Boolean {
+        val parts = kw.lowercase(Locale.ROOT).split(" ").filter { it.isNotBlank() }
+        return parts.isNotEmpty() && parts.all { hay.contains(it) }
+    }
+
+    private val BT_NOISE = setOf(
+        "bluetooth", "ब्लूटूथ", "se", "से", "connect", "connected", "ho", "hota", "hoga", "jaye", "jaaye", "जाए", "जाये", "hone", "jude", "juda", "जुड़े", "जुड़ा",
+        "disconnect", "kat", "कट", "lage", "लगे", "device", "ka", "ki", "ke", "का", "की", "के", "mein", "me", "में", "kisi", "koi", "jab", "aur", "bhi", "headset", "speaker"
+    ).map { s(it) }.toSet()
+    private val BT_OFF = setOf("disconnect", "kat", "कट", "katne", "कटे", "chhut", "छूट", "nikal", "निकल", "hat", "हट").map { s(it) }.toSet()
+    private val NOTIF_NOISE = setOf(
+        "notification", "notifications", "नोटिफिकेशन", "notify", "aaye", "aaya", "aati", "aata", "आए", "आये", "आया", "आती", "ki", "ka", "ke", "की", "का", "के", "se", "से",
+        "mein", "me", "में", "koi", "ek", "kuch", "naya", "nayi", "new", "ho", "hui", "hoti", "jab", "aur", "ya", "wali", "wala", "vali", "वाली", "वाला", "aane", "आने", "par", "पर", "pe"
+    ).map { s(it) }.toSet()
+
     private fun describe(o: JSONObject): String {
         val c = o.optString("cmd")
         return when (o.optString("k")) {
@@ -392,6 +427,12 @@ object Pro {
             "homeIn" -> "घर के वाईफाई से जुड़ने पर: $c"
             "homeOut" -> "घर का वाईफाई छोड़ने पर: $c"
             "date" -> "${o.optString("date")} को: $c"
+            "battLow" -> "बैटरी ${o.optInt("n", 20)} प्रतिशत से कम होने पर: $c"
+            "btOn" -> "ब्लूटूथ${kwTxt(o)} जुड़ने पर: $c"
+            "btOff" -> "ब्लूटूथ${kwTxt(o)} कटने पर: $c"
+            "headIn" -> "हेडफोन लगाने पर: $c"
+            "headOut" -> "हेडफोन निकालने पर: $c"
+            "notif" -> "${o.optString("kw")} वाली notification आने पर: $c"
             else -> c
         }
     }
@@ -417,6 +458,9 @@ object Pro {
                 when (i.action) {
                     Intent.ACTION_POWER_CONNECTED -> fire("plug")
                     Intent.ACTION_POWER_DISCONNECTED -> fire("unplug")
+                    BluetoothDevice.ACTION_ACL_CONNECTED -> fireBt("btOn", i)
+                    BluetoothDevice.ACTION_ACL_DISCONNECTED -> fireBt("btOff", i)
+                    Intent.ACTION_HEADSET_PLUG -> if (!isInitialStickyBroadcast) fire(if (i.getIntExtra("state", 0) == 1) "headIn" else "headOut")
                     WifiManager.NETWORK_STATE_CHANGED_ACTION -> {
                         val h = Prefs.homeSsid
                         if (h.isBlank()) return
@@ -431,6 +475,9 @@ object Pro {
         val f = IntentFilter().apply {
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(Intent.ACTION_HEADSET_PLUG)
             addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
         }
         try {
@@ -451,8 +498,66 @@ object Pro {
         val a = rules()
         for (i in 0 until a.length()) {
             val o = a.optJSONObject(i) ?: continue
-            if (o.optString("k") == kind) runCmd(o.optString("cmd"))
+            if (o.optString("k") == kind) runRule(o)
         }
+    }
+
+    private fun fireBt(kind: String, i: Intent) {
+        val name = try {
+            @Suppress("DEPRECATION")
+            val d = i.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+            d?.name ?: ""
+        } catch (e: Exception) { "" }
+        val a = rules()
+        for (k in 0 until a.length()) {
+            val o = a.optJSONObject(k) ?: continue
+            if (o.optString("k") != kind) continue
+            val kw = o.optString("kw")
+            if (kw.isBlank() || kwMatch(kw, name.lowercase(Locale.ROOT))) runRule(o)
+        }
+    }
+
+    /** Called for every notification from another app: a rule like "jab Amazon ki notification aaye" runs here. */
+    fun onNotification(app: String, title: String, text: String) {
+        val a = rules()
+        if (a.length() == 0) return
+        val hay = "$app $title $text".lowercase(Locale.ROOT)
+        for (i in 0 until a.length()) {
+            val o = a.optJSONObject(i) ?: continue
+            if (o.optString("k") != "notif") continue
+            if (kwMatch(o.optString("kw"), hay)) runRule(o)
+        }
+    }
+
+    /** "Battery 20 se kam ho to ...": fires once when the level drops, and re-arms after a charge or a 5 point recovery. */
+    private fun batteryCheck() {
+        val ctx = ctxForRun ?: return
+        val a = rules()
+        var has = false
+        for (i in 0 until a.length()) if (a.optJSONObject(i)?.optString("k") == "battLow") has = true
+        if (!has) return
+        val st = ctx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return
+        val level = st.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = st.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+        if (level < 0 || scale <= 0) return
+        val pct = level * 100 / scale
+        val plugged = st.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+        var changed = false
+        for (i in 0 until a.length()) {
+            val o = a.optJSONObject(i) ?: continue
+            if (o.optString("k") != "battLow") continue
+            val n = o.optInt("n", 20)
+            val armed = o.optBoolean("armed", true)
+            if (!plugged && pct <= n && armed) {
+                o.put("armed", false)
+                changed = true
+                runRule(o)
+            } else if ((plugged || pct > n + 5) && !armed) {
+                o.put("armed", true)
+                changed = true
+            }
+        }
+        if (changed) Prefs.rules = a.toString()
     }
 
     private val BLOCKED = listOf("sms", "एसएमएस", "call", "कॉल", "फोन करो", "message", "मैसेज", "whatsapp", "व्हाट्सएप", "व्हाट्सऐप")
@@ -477,6 +582,7 @@ object Pro {
 
     /** Called once a minute. */
     fun tick() {
+        try { batteryCheck() } catch (e: Exception) { /* battery rules are optional */ }
         val cal = Calendar.getInstance()
         val td = today()
         val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
@@ -524,6 +630,24 @@ object Pro {
                 if (has("raat", "रात") && h == 24) h = 0
                 if (h !in 0..23) return null
                 o.put("k", "time").put("at", String.format(Locale.US, "%02d:%02d", h, min))
+            }
+            has("battery", "बैटरी") && has("kam", "कम", "niche", "नीचे", "below", "less", "gir", "गिर", "low", "लो") -> {
+                val n = toks.firstNotNullOfOrNull { it.toIntOrNull() ?: Local.numberOf(it) }?.takeIf { it in 1..99 } ?: 20
+                o.put("k", "battLow").put("n", n).put("armed", true)
+            }
+            has("bluetooth", "ब्लूटूथ", "blutooth") -> {
+                val off = toks.any { it in BT_OFF }
+                val kw = toks.filter { it !in BT_NOISE && it.toIntOrNull() == null }.joinToString(" ")
+                o.put("k", if (off) "btOff" else "btOn").put("kw", kw)
+            }
+            has("headphone", "earphone", "earbud", "handsfree", "हेडफोन", "ईयरफोन", "इयरफोन", "हैंडसफ्री") -> {
+                val out = has("nikal", "निकाल", "hata", "हटा", "unplug", "निकले")
+                o.put("k", if (out) "headOut" else "headIn")
+            }
+            has("notification", "नोटिफिकेशन", "notify") -> {
+                val kw = toks.filter { it !in NOTIF_NOISE }.joinToString(" ").trim()
+                if (kw.isBlank()) return "किस ऐप या शब्द की notification पर? जैसे: जब Amazon की notification आए तो बोलो पार्सल आ गया।"
+                o.put("k", "notif").put("kw", kw)
             }
             has("charger", "चार्जर", "charge") -> {
                 val out = has("nikal", "निकाल", "hata", "हटा", "unplug")

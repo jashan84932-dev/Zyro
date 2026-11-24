@@ -19,6 +19,7 @@ class Brain(private val hands: Hands) {
     private class ApiError(val code: Int, val body: String) : Exception("HTTP $code")
 
     fun reply(userText: String): String {
+        Memory.lastQuery = userText
         val hist = Memory.history()
         return when {
             Prefs.apiKey.isNotBlank() -> replyClaude(userText, hist)
@@ -392,8 +393,8 @@ class Brain(private val hands: Hands) {
         val name = Prefs.friendName
         val user = Prefs.userName
         val now = SimpleDateFormat("EEEE, d MMMM yyyy, HH:mm", Locale.ENGLISH).format(Date())
-        val facts = Memory.facts()
-        val factsText = if (facts.isEmpty()) "(अभी कुछ नहीं)" else facts.joinToString("\n") { "- $it" }
+        val facts = Memory.recall(Memory.lastQuery, 30)
+        val factsText = if (facts.isEmpty()) "(अभी कुछ नहीं)" else Mind.grouped(facts)
         val jarvis = Prefs.jarvisMode
         val addr = if (user.isBlank()) "सर" else user
         val intro = if (jarvis) {

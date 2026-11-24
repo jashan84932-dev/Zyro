@@ -300,13 +300,13 @@ object Agent {
         } catch (e: Exception) {}
     }
 
-    private val DEEP_APPS = listOf("youtube", "maps", "spotify", "amazon", "flipkart", "google", "यूट्यूब", "मैप", "स्पोटिफाई", "अमेज़न", "अमेजन", "फ्लिपकार्ट", "गूगल", "play store", "playstore", "प्ले स्टोर")
+    private val DEEP_APPS = listOf("youtube", "maps", "spotify", "amazon", "flipkart", "google", "यूट्यूब", "मैप", "स्पोटिफाई", "अमेज़न", "अमेजन", "फ्लिपकार्ट", "गूगल", "play store", "playstore", "प्ले स्टोर", "netflix", "नेटफ्लिक्स", "reddit", "रेडिट", "pinterest", "पिंटरेस्ट")
 
     private val FAST_STOP = setOf(
         "khol", "kholo", "खोल", "खोलो", "open", "search", "serch", "karo", "kar", "करो", "कर", "dhundo", "dhoondo", "ढूंढो", "ढूँढो", "dhundh", "chalao", "chala", "चलाओ", "चला",
         "play", "laga", "lagao", "लगाओ", "लगा", "dekho", "dikhao", "दिखाओ", "देखो", "par", "pe", "पर", "पे", "mein", "me", "में", "ka", "ki", "ke", "ko", "का", "की", "के", "को",
         "wahan", "वहां", "वहाँ", "jaldi", "जल्दी", "please", "plz", "zara", "ज़रा", "जरा", "mujhe", "मुझे", "ek", "एक", "ab", "अब", "me", "app", "ऐप", "एप", "bhai", "यार", "yaar", "sunao", "सुनाओ",
-        "youtube", "यूट्यूब", "maps", "map", "मैप", "मैप्स", "spotify", "स्पोटिफाई", "amazon", "अमेज़न", "अमेजन", "flipkart", "फ्लिपकार्ट", "google", "गूगल", "play", "store", "playstore", "प्ले", "स्टोर", "install", "इंस्टॉल"
+        "youtube", "यूट्यूब", "maps", "map", "मैप", "मैप्स", "spotify", "स्पोटिफाई", "amazon", "अमेज़न", "अमेजन", "flipkart", "फ्लिपकार्ट", "google", "गूगल", "play", "store", "playstore", "प्ले", "स्टोर", "install", "इंस्टॉल", "netflix", "नेटफ्लिक्स", "reddit", "रेडिट", "pinterest", "पिंटरेस्ट"
     )
 
     /** (app, query) when the job is one short plain sentence like "YouTube pe tagda gaana chalao"; otherwise null. */
@@ -320,6 +320,9 @@ object Agent {
             jl.contains("youtube") || jl.contains("यूट्यूब") -> "youtube"
             jl.contains("spotify") || jl.contains("स्पोटिफाई") -> "spotify"
             jl.contains("flipkart") || jl.contains("फ्लिपकार्ट") -> "flipkart"
+            jl.contains("netflix") || jl.contains("नेटफ्लिक्स") -> "netflix"
+            jl.contains("reddit") || jl.contains("रेडिट") -> "reddit"
+            jl.contains("pinterest") || jl.contains("पिंटरेस्ट") -> "pinterest"
             jl.contains("amazon") || jl.contains("अमेज़न") || jl.contains("अमेजन") -> "amazon"
             jl.contains("play store") || jl.contains("playstore") || jl.contains("प्ले स्टोर") -> "playstore"
             jl.contains("maps") || jl.contains("मैप") -> "maps"
@@ -666,8 +669,12 @@ object Agent {
      * Opens a search result page straight from a link (YouTube, Maps, Spotify, Amazon, Flipkart, Google),
      * skipping the open-app / find-box / type / enter steps. Returns a note for the agent, or null.
      */
+    /** True when the last deepOpen opened a plain search that needs nothing more (so the agent can stop at once). */
+    @Volatile private var deepPure = false
+
     private fun deepOpen(ctx: Context, job: String): String? {
         val jl = low(job)
+        deepPure = false
         if (DEEP_APPS.none { jl.contains(it) }) return null
         // fast path: a short, simple "YouTube pe X chalao" is understood here, without waiting for an AI call
         val local = fastGuess(jl)
@@ -677,7 +684,7 @@ object Agent {
         else {
             val r = Brain.quickJson(
                 "User task for a phone agent: \"$job\"\nIf the task starts by searching or playing something in YouTube, Google Maps, Spotify, Amazon, Flipkart, Play Store or Google, " +
-                    "reply {\"app\":\"youtube|maps|spotify|amazon|flipkart|playstore|google\",\"query\":\"only the search words, in the language a user would type\"}. " +
+                    "reply {\"app\":\"youtube|maps|spotify|amazon|flipkart|playstore|google|netflix|reddit|pinterest\",\"query\":\"only the search words, in the language a user would type\"}. " +
                     "Otherwise reply {\"app\":\"none\",\"query\":\"\"}. JSON only.",
                 90, 8000, true
             ) ?: return null
@@ -686,6 +693,8 @@ object Agent {
             q = j.optString("query").trim()
         }
         if (q.isEmpty() || app == "none") return null
+        deepPure = local != null && app in setOf("maps", "amazon", "flipkart", "google", "reddit", "pinterest", "netflix") &&
+            listOf("navigate", "navigation", "direction", "रास्ता", "rasta", "chalo", "चलो", "route", "रूट", "play", "chalao", "चलाओ", "चला", "lagao", "लगाओ", "laga", "लगा").none { jl.contains(it) }
         val e = java.net.URLEncoder.encode(q, "UTF-8")
         val (url, pkg) = when (app) {
             "youtube" -> Pair("https://www.youtube.com/results?search_query=$e", "com.google.android.youtube")
@@ -695,6 +704,9 @@ object Agent {
             "flipkart" -> Pair("https://www.flipkart.com/search?q=$e", "com.flipkart.android")
             "google" -> Pair("https://www.google.com/search?q=$e", "")
             "playstore" -> Pair("market://search?q=$e", "com.android.vending")
+            "netflix" -> Pair("https://www.netflix.com/search?q=$e", "com.netflix.mediaclient")
+            "reddit" -> Pair("https://www.reddit.com/search/?q=$e", "com.reddit.frontpage")
+            "pinterest" -> Pair("https://www.pinterest.com/search/pins/?q=$e", "com.pinterest")
             else -> return null
         }
         fun go(withPkg: Boolean): Boolean = try {
@@ -896,6 +908,7 @@ Reply ONLY JSON: {"complete":true,"why":"","next":"the concrete next action if n
         }
         val deep = if (ytdl != null) "" else deepOpen(ctx, job)
         if (deep != null && deep.isNotEmpty()) { history.add(deep); Thread.sleep(1800) }
+        if (deep != null && deep.isNotEmpty() && deepPure) { say("ठीक है, खोल दिया।"); return }
         val first = if (deep != null || ytdl != null) null else APPS.firstOrNull { it.all { c -> c.code < 128 } && jl.contains(it) }
         if (first != null) {
             val r = openSmart(hands, first)

@@ -186,6 +186,7 @@ class Assistant private constructor(private val app: Context) {
             try { Life.tick() } catch (e: Exception) { /* nudges are optional */ }
             try { Stark.tick() } catch (e: Exception) { /* warnings are optional */ }
             try { Nudge.tick(app) } catch (e: Exception) { /* greetings are optional */ }
+            try { Cal.tick(app) } catch (e: Exception) { /* reminders are optional */ }
             if (mode == OrbView.LISTEN) {
                 val q = Comms.habitOffer()
                 if (q != null) {
@@ -461,7 +462,7 @@ class Assistant private constructor(private val app: Context) {
     /** Words that count as saying the wake word "Hey Zyro" (speech recognisers spell it many ways). */
     private fun wakeWords(): List<String> {
         val base = mutableListOf(
-            "zyro", "ziro", "zairo", "jairo", "zero", "ज़ाइरो", "जाइरो", "ज़ायरो", "जायरो", "ज़ीरो", "जीरो", "ज़ाइरा")
+            "zyro", "ziro", "zairo", "jairo", "zero", "ज़ाइरो", "जाइरो", "ज़ायरो", "जायरो", "ज़ीरो", "जीरो", "ज़ाइरा", "sayro", "sairo", "zayro", "jyro", "jiro", "zyra", "सायरो", "जायरो")
         val n = Prefs.friendName.trim().lowercase(Locale.getDefault())
         if (n.length >= 3 && n !in base) base.add(n)
         if (Prefs.jarvisMode) base.addAll(listOf("jarvis", "jarwis", "javis", "जार्विस", "जार्विश", "जारविस", "जर्विस"))

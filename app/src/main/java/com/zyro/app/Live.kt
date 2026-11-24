@@ -68,6 +68,12 @@ object Live {
         return x
     }
 
+    /** True when the user is telling Zyro to stop what it is doing ("ruko", "isko band karo", "stop"). */
+    private fun wantsStop(x: String): Boolean {
+        val l = x.lowercase()
+        return listOf("ruko", "ruk ja", "rok do", "rok ", "stop", "cancel", "band kar", "band ", "chhod do", "बंद", "रुको", "रुक ", "रोक", "छोड़ दो").any { l.contains(it) }
+    }
+
     private fun s(x: String) = Local.strip(x)
 
     fun handle(hands: Hands, t: String, words: List<String>, raw: String): String? {
@@ -274,6 +280,7 @@ object Live {
         persona.append("If a tool result asks the user a yes/no question, ask it aloud and then call phone_command again with their answer ('haan' or 'nahi'). Translation, summaries, writing and general chat you can do yourself. ")
         persona.append("and agent_task for multi-step jobs inside apps (ordering food, logging in, finding and playing a match or video, searching in an app). When the user gives such a job, call agent_task at once with the whole job in his words; never ask extra questions first and never say you cannot. A long command with several parts (words like 'karke', 'phir', 'uske baad', 'and then') is ONE agent_task with the full sentence; never split it into several tool calls. The agent handles popups and problems itself and asks the user only for OTP or password. While the agent works you must stay silent: never say things like 'wait kijiye', 'main kar raha hoon', 'koi dikkat aa rahi hai' or any filler; speak only when a [System notice] gives a result or a question for the user. For simple commands call the tool at once and say at most two words afterwards; never narrate what you are about to do. Anything the user asks you to do on the screen (click, tap, play, scroll, open, type) is YOUR job: use a tool or agent_task; never tell the user to do it himself. The user speaks only Hindi, Hinglish or English. If a transcript of his words looks like another language, a stray name or nonsense (for example Korean or Spanish words), he did not say that: take it as Hindi or English by the sound and, if still unclear, ask him once to repeat instead of searching or acting on it. ")
         persona.append("Short fillers like \"जी सर\", \"सर\", \"हां सर\", \"no speech\" or a lone word are usually background noise or a mis-heard sound: do NOT answer them and do not ask \"boliye kya sawaal hai\" again and again; stay quiet until a real request comes. You CAN download videos (YouTube, Instagram etc.) through the on-screen agent: never say you cannot or that it is against rules; just start the task. When you are unsure what the user said (a mis-heard odd phrase), ask once instead of starting an unrelated action. Never repeat an earlier result or apology (for example about a failed download) once you have said it; if the user asks about it, answer in one new sentence. The agent finishing with a failure does not mean YOU cannot do the task: say once what blocked it and offer one different way. ")
+        persona.append("The user's name for you is \"").append(Prefs.friendName).append("\". The microphone often mis-hears it as Sid, Sayro, Zairo, Zero, Jyro or Cairo: treat those as your name, never as a task, and answer a plain greeting with one short friendly line. If the user says stop, ruko or band karo while the agent is working, call stop_agent at once. ")
         persona.append("Speak like a real person with real feelings, not like a machine. Follow the user's mood in your voice: bright and quick for good news, soft and slower when they sound low or tired, playful when they joke, calm and clear for warnings. ")
         persona.append("Sound spoken, not written: short sentences, natural rhythm, the odd 'hmm', 'acha', 'arre wah' or a small laugh when it fits, but never every sentence and never the same opener twice in a row. Never read out lists, symbols or links; say things the way a friend would. ")
         run {
@@ -306,7 +313,7 @@ object Live {
             val mf = Memory.facts().takeLast(30).filter { seen.add(it.lowercase()) }
             if (mf.isNotEmpty()) {
                 persona.append("What you have learned about the user over time: ")
-                mf.forEach { persona.append(it.take(160)).append("; ") }
+                persona.append(Mind.grouped(mf.map { it.take(160) }).replace("\n", " ")).append(" ")
             }
             val hist = Memory.history().takeLast(6)
             if (hist.isNotEmpty()) {
@@ -319,7 +326,8 @@ object Live {
         persona.append("Never claim you did something unless the tool result says so. When the user says goodbye or wants to stop, call end_live.")
         val fn = JSONArray()
             .put(decl("phone_command", "Run ANY phone feature exactly as the user would say it, in their own words, e.g. 'torch on', 'mummy ko call karo', 'hologram chalao', 'clipboard github par daalo', 'ek calculator app banao'.", "command", "The command in Hindi or English"))
-            .put(decl("agent_task", "Start the phone agent for a multi-step job inside apps, e.g. 'Zomato par 2 biryani order karo'. The agent asks the user for confirmation before paying.", "task", "The full task"))
+            .put(decl("agent_task", "Start the phone agent for a multi-step job inside apps, e.g. 'Zomato par 2 biryani order karo'. The agent asks the user for confirmation before paying. Use it ONLY when the user clearly asked for such a job; never for a greeting, your name, a wake word or speech you are unsure about.", "task", "The full task"))
+            .put(JSONObject().put("name", "stop_agent").put("description", "Stop the phone agent right now. Call it whenever the user says stop, ruko, band karo, enough, or that the agent should leave the phone alone."))
             .put(decl("search_web", "Search the live web and get a short answer. Use for news, prices, scores, weather, any current fact.", "query", "What to look up"))
             .put(JSONObject().put("name", "read_screen").put("description", "Read what is currently on the phone screen."))
             .put(decl("remember", "Save a fact about the user for the future.", "fact", "The fact, one short sentence"))
@@ -368,7 +376,7 @@ object Live {
                     }
                 }
             }
-            sc.optJSONObject("inputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis() } }
+            sc.optJSONObject("inputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis(); if (Agent.running && wantsStop(inText.toString())) Agent.cancel() } }
             sc.optJSONObject("outputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) outText.append(it) }
             if (sc.optBoolean("turnComplete", false)) {
                 val c = appCtx
@@ -425,6 +433,7 @@ object Live {
                     val c = appCtx
                     val task = args.optString("task")
                     if (!VoicePrint.allowed()) "BLOCKED: the voice did not match the owner. Do not do it. Say in one short friendly line that this does not sound like the owner's voice, so you will not do it."
+                    else if (inText.toString().trim().let { it.isNotEmpty() && it.split(Regex("\\s+")).size < 3 }) "BLOCKED: the user only said a few words (a greeting, your name or something mis-heard), not a job. Do not start any task. Stay quiet or ask once what they want."
                     else if (h == null || c == null || task.isBlank()) "no task"
                     else {
                         val r = Agent.start(c, h, task)
@@ -451,6 +460,7 @@ object Live {
                         "saved"
                     }
                 }
+                "stop_agent" -> if (Agent.running) { Agent.cancel(); "stopped" } else "no agent is running"
                 "end_live" -> {
                     endAfterTurn = true
                     "ok, ending after your goodbye"
