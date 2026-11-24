@@ -52,6 +52,7 @@ object Live {
     private val inText = StringBuilder()
     @Volatile private var modelTry = 0
     @Volatile private var endAfterTurn = false
+    @Volatile private var devFired = false
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
     }
@@ -134,6 +135,17 @@ object Live {
             }
         }.start()
         return "ठीक है, लाइव मोड चालू करता हूँ।"
+    }
+
+    /** "Claude ke saath upgrade discuss karo" is handled right here, so it never depends on the voice AI deciding to call a tool (it used to make up a story instead). */
+    private fun startDev(raw: String) {
+        val c = appCtx ?: return
+        val h = hands ?: return
+        Thread {
+            val msg = try { Dev.handle(c, h, Local.strip(raw.lowercase(java.util.Locale.ROOT)), raw) } catch (e: Exception) { "अपग्रेड शुरू नहीं हो पाया: ${e.message}" }
+            stop()
+            if (!msg.isNullOrBlank()) try { Assistant.get(c).announce(msg) } catch (e: Exception) { }
+        }.start()
     }
 
     fun stop() {
@@ -281,6 +293,7 @@ object Live {
         persona.append("and agent_task for multi-step jobs inside apps (ordering food, logging in, finding and playing a match or video, searching in an app). When the user gives such a job, call agent_task at once with the whole job in his words; never ask extra questions first and never say you cannot. A long command with several parts (words like 'karke', 'phir', 'uske baad', 'and then') is ONE agent_task with the full sentence; never split it into several tool calls. The agent handles popups and problems itself and asks the user only for OTP or password. While the agent works you must stay silent: never say things like 'wait kijiye', 'main kar raha hoon', 'koi dikkat aa rahi hai' or any filler; speak only when a [System notice] gives a result or a question for the user. For simple commands call the tool at once and say at most two words afterwards; never narrate what you are about to do. Anything the user asks you to do on the screen (click, tap, play, scroll, open, type) is YOUR job: use a tool or agent_task; never tell the user to do it himself. The user speaks only Hindi, Hinglish or English. If a transcript of his words looks like another language, a stray name or nonsense (for example Korean or Spanish words), he did not say that: take it as Hindi or English by the sound and, if still unclear, ask him once to repeat instead of searching or acting on it. ")
         persona.append("Short fillers like \"जी सर\", \"सर\", \"हां सर\", \"no speech\" or a lone word are usually background noise or a mis-heard sound: do NOT answer them and do not ask \"boliye kya sawaal hai\" again and again; stay quiet until a real request comes. You CAN download videos (YouTube, Instagram etc.) through the on-screen agent: never say you cannot or that it is against rules; just start the task. When you are unsure what the user said (a mis-heard odd phrase), ask once instead of starting an unrelated action. Never repeat an earlier result or apology (for example about a failed download) once you have said it; if the user asks about it, answer in one new sentence. The agent finishing with a failure does not mean YOU cannot do the task: say once what blocked it and offer one different way. ")
         persona.append("The user's name for you is \"").append(Prefs.friendName).append("\". The microphone often mis-hears it as Sid, Sayro, Zairo, Zero, Jyro or Cairo: treat those as your name, never as a task, and answer a plain greeting with one short friendly line. If the user says stop, ruko or band karo while the agent is working, call stop_agent at once. ")
+        persona.append("NEVER say you are processing, syncing, analysing or working in the background, and never give a percentage, a time estimate or a progress report: you can only do what a tool call really does, and you cannot work after the call ends. If the user asks you to discuss or improve yourself with Claude (the microphone may write Claude as Cloud, Klaud or Clot), call phone_command with their exact sentence and tell them only what the tool returns. If the user asks you to stay quiet until they call you again, say one short okay and call end_live. ")
         persona.append("Speak like a real person with real feelings, not like a machine. Follow the user's mood in your voice: bright and quick for good news, soft and slower when they sound low or tired, playful when they joke, calm and clear for warnings. ")
         persona.append("Sound spoken, not written: short sentences, natural rhythm, the odd 'hmm', 'acha', 'arre wah' or a small laugh when it fits, but never every sentence and never the same opener twice in a row. Never read out lists, symbols or links; say things the way a friend would. ")
         run {
@@ -376,7 +389,7 @@ object Live {
                     }
                 }
             }
-            sc.optJSONObject("inputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis(); if (Agent.running && wantsStop(inText.toString())) Agent.cancel() } }
+            sc.optJSONObject("inputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis(); if (Agent.running && wantsStop(inText.toString())) Agent.cancel(); if (!devFired && Dev.matches(inText.toString())) { devFired = true; startDev(inText.toString()) } } }
             sc.optJSONObject("outputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) outText.append(it) }
             if (sc.optBoolean("turnComplete", false)) {
                 val c = appCtx
@@ -392,6 +405,7 @@ object Live {
                 }
                 inText.setLength(0)
                 outText.setLength(0)
+                devFired = false
                 if (endAfterTurn) {
                     Thread {
                         Thread.sleep(1800)

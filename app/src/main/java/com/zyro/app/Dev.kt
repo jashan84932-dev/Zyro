@@ -57,10 +57,17 @@ Rules: only paths under app/src/main/ may change. Create new files for new featu
 
     // ------------------------------------------------------------------ voice entry
 
+    private fun asksUpgrade(t: String): Boolean {
+        val who = has(t, "claude", "cloud", "klaud", "क्लॉड", "क्लाउड", "क्लॉट", "dev mode", "डेव मोड", "apna upgrade", "अपना अपग्रेड", "khud ko upgrade", "खुद को अपग्रेड", "self upgrade")
+        val up = has(t, "upgrade", "अपग्रेड", "discuss", "डिस्कस", "improve", "sudhar", "सुधार", "behtar", "बेहतर")
+        return who && up
+    }
+
+    /** True when a spoken sentence asks to discuss an upgrade with Claude (used by Live so it does not depend on the voice AI calling a tool). */
+    fun matches(raw: String): Boolean = !busy && asksUpgrade(Local.strip(raw.lowercase(java.util.Locale.ROOT)))
+
     fun handle(ctx: Context, hands: Hands, t: String, raw: String): String? {
-        val who = has(t, "claude", "क्लॉड", "क्लाउड", "dev mode", "डेव मोड", "apna upgrade", "अपना अपग्रेड", "khud ko upgrade", "खुद को अपग्रेड", "self upgrade")
-        val up = has(t, "upgrade", "अपग्रेड", "discuss", "डिस्कस", "improve", "sudhar", "सुधार")
-        if (!who || !up) return null
+        if (!asksUpgrade(t)) return null
         if (busy) return "अपग्रेड का सेशन पहले से चल रहा है।"
         if (Prefs.githubToken.isBlank()) return "GitHub token चाहिए। Settings में GITHUB token डालो।"
         val quiet = has(t, "chupke", "chupchap", "background", "api se", "bina dikhaye", "चुपके", "चुपचाप", "बैकग्राउंड", "बिना दिखाए")
