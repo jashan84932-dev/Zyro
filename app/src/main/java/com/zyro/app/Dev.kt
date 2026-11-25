@@ -68,18 +68,23 @@ Rules: only paths under app/src/main/ may change. Create new files for new featu
 
     fun handle(ctx: Context, hands: Hands, t: String, raw: String): String? {
         if (!asksUpgrade(t)) return null
+        val quiet = has(t, "chupke", "chupchap", "background", "api se", "bina dikhaye", "चुपके", "चुपचाप", "बैकग्राउंड", "बिना दिखाए")
+        return beginWith(ctx, hands, raw, quiet)
+    }
+
+    /** Starts a session with [wish] as the owner's request (an upgrade talk, or a bug-fix round from the Doctor). */
+    fun beginWith(ctx: Context, hands: Hands, wish: String, quiet: Boolean): String {
         if (busy) return "अपग्रेड का सेशन पहले से चल रहा है।"
         if (Prefs.githubToken.isBlank()) return "GitHub token चाहिए। Settings में GITHUB token डालो।"
-        val quiet = has(t, "chupke", "chupchap", "background", "api se", "bina dikhaye", "चुपके", "चुपचाप", "बैकग्राउंड", "बिना दिखाए")
         val visible = !quiet && hands.service != null
         if (!visible && Prefs.apiKey.isBlank() && !Prefs.hasGemini) return "दिखाकर करने के लिए Accessibility में Zyro चालू करो, या चुपके से करने के लिए Claude या Gemini key डालो।"
         busy = true
         stopped = false
         Thread {
-            try { session(ctx, hands, raw, visible) } catch (e: Exception) { say(ctx, "अपग्रेड सेशन में दिक्कत आई: ${e.message}") } finally { busy = false; awaiting = false }
+            try { session(ctx, hands, wish, visible) } catch (e: Exception) { say(ctx, "अपग्रेड सेशन में दिक्कत आई: ${e.message}") } finally { busy = false; awaiting = false }
         }.start()
         return if (visible) "ठीक है। मैं Claude ऐप खोलकर उससे बात करता हूँ, फिर Chrome में GitHub पर फाइलें डालूँगा। सब स्क्रीन पर दिखेगा, बीच में छूना मत। रोकना हो तो बोलो रुको।"
-        else "ठीक है। मैं चुपके से Claude से बात करके अपना अपग्रेड तैयार करता हूँ। पूरी बातचीत लॉग में दिखेगी।"
+        else "ठीक है। मैं चुपके से Claude से बात करके काम तैयार करता हूँ। पूरी बातचीत लॉग में दिखेगी।"
     }
 
     /** "haan" / "nahi" while Zyro waits to put the change on GitHub. */
@@ -115,7 +120,7 @@ Rules: only paths under app/src/main/ may change. Create new files for new featu
 
         val intro = "Main Zyro hoon, Jashan ka voice assistant app. Aaj hum mere agle bade upgrade par baat karenge.\n" +
             "Owner ne kaha: \"$wish\"\n\nMeri apni dikkatein (jo main khud dekh chuka hoon):\n$SELF\n\n" +
-            "Last build: ${lastBuild()}\n\nMeri files:\n${repoMap()}\n\nBatao, mujhe sabse bada upgrade kaun sa chahiye aur kaise karein?"
+            "Last build: ${lastBuild()}\n\nMeri files:\n${repoMap()}\n\n" + (if (wish.startsWith("BUG-FIX")) "Upar ke bugs ke liye sirf chhote patches do." else "Batao, mujhe sabse bada upgrade kaun sa chahiye aur kaise karein?")
         val msgs = ArrayList<Pair<String, String>>()
         msgs.add("user" to intro)
         log(ctx, "🤖 Zyro → Claude: " + intro.take(260) + "…")

@@ -19,7 +19,7 @@ import java.util.Locale
  * minimised - until you press Stop (or say "stop listening").
  */
 class Assistant private constructor(private val app: Context) {
-    init { CrashLog.install(app) }
+    init { CrashLog.install(app); Doctor.onStart(app) }
 
 
     companion object {
@@ -78,7 +78,10 @@ class Assistant private constructor(private val app: Context) {
         private set
 
     /** Live mode / agent put their lines into the same transcript. */
-    fun note(line: String) = main.post { log(line) }
+    fun note(line: String) {
+        Doctor.soft(app, line)
+        main.post { log(line) }
+    }
 
     /** Everything shown in the transcript, for the Copy log button. */
     fun logText(): String {

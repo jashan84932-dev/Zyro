@@ -89,6 +89,7 @@ object Extras {
 
         // ----- calls, SMS, OTP, navigation, habits -----
         Mission.handle(ctx, hands, t, raw)?.let { return it }
+        Doctor.handle(ctx, hands, t, raw)?.let { return it }
         Dev.handle(ctx, hands, t, raw)?.let { return it }
         Duet.handle(ctx, hands, t, raw)?.let { return it }
         Trip.handle(ctx, t, raw)?.let { return it }

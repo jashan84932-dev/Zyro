@@ -54,7 +54,9 @@ object Local {
     internal fun numberOf(token: String): Int? = token.toIntOrNull() ?: NUM_WORDS[strip(token)]
 
     /** Returns the sentence to speak, or null if this is not a phone command. */
-    fun handle(hands: Hands, raw: String): String? {
+    fun handle(hands: Hands, raw: String): String? = BlackBox.track(hands, raw) { handleCore(hands, raw) }
+
+    private fun handleCore(hands: Hands, raw: String): String? {
         val t = norm(raw)
         if (t.isEmpty()) return null
         val words = t.split(" ")

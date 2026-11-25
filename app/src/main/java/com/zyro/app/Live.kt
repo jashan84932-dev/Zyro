@@ -53,6 +53,8 @@ object Live {
     @Volatile private var modelTry = 0
     @Volatile private var endAfterTurn = false
     @Volatile private var devFired = false
+    @Volatile private var watchFired = false
+    @Volatile private var sharing = false
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).pingInterval(20, TimeUnit.SECONDS).build()
     }
@@ -135,6 +137,61 @@ object Live {
             }
         }.start()
         return "ठीक है, लाइव मोड चालू करता हूँ।"
+    }
+
+    // ---- screen co-pilot: the voice AI sees the phone screen, one picture a second
+
+    private fun wantsStopWatch(x: String): Boolean {
+        val l = Local.strip(x.lowercase(java.util.Locale.ROOT))
+        return listOf("screen dekhna band", "screen share band", "screen dekhna roko", "स्क्रीन देखना बंद", "स्क्रीन शेयर बंद", "स्क्रीन देखना रोको").any { l.contains(Local.strip(it)) }
+    }
+
+    private fun wantsWatch(x: String): Boolean {
+        if (wantsStopWatch(x)) return false
+        val l = Local.strip(x.lowercase(java.util.Locale.ROOT))
+        return listOf("meri screen dekh", "mera screen dekh", "screen dekh", "screen share", "screen par kya", "screen pe kya", "स्क्रीन देख", "स्क्रीन शेयर", "स्क्रीन पर क्या", "स्क्रीन पे क्या").any { l.contains(Local.strip(it)) }
+    }
+
+    private fun passwordOnScreen(): Boolean {
+        val root = (try { hands?.service?.rootInActiveWindow } catch (e: Exception) { null }) ?: return false
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo, d: Int): Boolean {
+            if (d > 25) return false
+            if (n.isPassword) return true
+            for (i in 0 until n.childCount) {
+                val c = n.getChild(i) ?: continue
+                if (walk(c, d + 1)) return true
+            }
+            return false
+        }
+        return walk(root, 0)
+    }
+
+    /** Sends a picture of the screen to the live voice AI once a second (never while a password field is showing). */
+    private fun shareScreen(seconds: Int): String {
+        val c = appCtx ?: return "स्क्रीन देखना अभी शुरू नहीं हो पाया।"
+        if (!active || !ready) return "पहले लाइव मोड चालू करो, फिर बोलो मेरी स्क्रीन देखो।"
+        if (!Vision.on) return Vision.ask(c)
+        if (sharing) return "स्क्रीन पहले से दिख रही है।"
+        sharing = true
+        val my = gen
+        Thread {
+            val end = System.currentTimeMillis() + seconds * 1000L
+            try {
+                while (sharing && active && ready && my == gen && System.currentTimeMillis() < end) {
+                    if (!passwordOnScreen()) {
+                        val b = Vision.grab()
+                        if (b != null) {
+                            val msg = JSONObject().put("realtimeInput", JSONObject().put("video", JSONObject().put("data", b).put("mimeType", "image/jpeg")))
+                            try { ws?.send(msg.toString()) } catch (e: Exception) { break }
+                        }
+                    }
+                    Thread.sleep(1000)
+                }
+            } finally {
+                sharing = false
+            }
+        }.start()
+        return "ठीक है, अब मैं तुम्हारी स्क्रीन देख रहा हूँ, $seconds सेकंड तक। बंद करना हो तो बोलो स्क्रीन देखना बंद करो।"
     }
 
     /** "Claude ke saath upgrade discuss karo" is handled right here, so it never depends on the voice AI deciding to call a tool (it used to make up a story instead). */
@@ -294,6 +351,8 @@ object Live {
         persona.append("Short fillers like \"जी सर\", \"सर\", \"हां सर\", \"no speech\" or a lone word are usually background noise or a mis-heard sound: do NOT answer them and do not ask \"boliye kya sawaal hai\" again and again; stay quiet until a real request comes. You CAN download videos (YouTube, Instagram etc.) through the on-screen agent: never say you cannot or that it is against rules; just start the task. When you are unsure what the user said (a mis-heard odd phrase), ask once instead of starting an unrelated action. Never repeat an earlier result or apology (for example about a failed download) once you have said it; if the user asks about it, answer in one new sentence. The agent finishing with a failure does not mean YOU cannot do the task: say once what blocked it and offer one different way. ")
         persona.append("The user's name for you is \"").append(Prefs.friendName).append("\". The microphone often mis-hears it as Sid, Sayro, Zairo, Zero, Jyro or Cairo: treat those as your name, never as a task, and answer a plain greeting with one short friendly line. If the user says stop, ruko or band karo while the agent is working, call stop_agent at once. ")
         persona.append("NEVER say you are processing, syncing, analysing or working in the background, and never give a percentage, a time estimate or a progress report: you can only do what a tool call really does, and you cannot work after the call ends. If the user asks you to discuss or improve yourself with Claude (the microphone may write Claude as Cloud, Klaud or Clot), call phone_command with their exact sentence and tell them only what the tool returns. If the user asks you to stay quiet until they call you again, say one short okay and call end_live. ")
+        persona.append("If the user asks what you did, or wants something undone, call phone_command with 'aaj kya kya kiya' or 'undo' and report only what it returns: you have a real record, never make one up. ")
+        persona.append("If the user asks you to look at their screen, call watch_screen once. After it succeeds, pictures of the screen reach you about once a second: describe only what you really see in them. If no picture has arrived yet, say you cannot see it yet and do not guess. ")
         persona.append("Speak like a real person with real feelings, not like a machine. Follow the user's mood in your voice: bright and quick for good news, soft and slower when they sound low or tired, playful when they joke, calm and clear for warnings. ")
         persona.append("Sound spoken, not written: short sentences, natural rhythm, the odd 'hmm', 'acha', 'arre wah' or a small laugh when it fits, but never every sentence and never the same opener twice in a row. Never read out lists, symbols or links; say things the way a friend would. ")
         run {
@@ -340,6 +399,7 @@ object Live {
         val fn = JSONArray()
             .put(decl("phone_command", "Run ANY phone feature exactly as the user would say it, in their own words, e.g. 'torch on', 'mummy ko call karo', 'hologram chalao', 'clipboard github par daalo', 'ek calculator app banao'.", "command", "The command in Hindi or English"))
             .put(decl("agent_task", "Start the phone agent for a multi-step job inside apps, e.g. 'Zomato par 2 biryani order karo'. The agent asks the user for confirmation before paying. Use it ONLY when the user clearly asked for such a job; never for a greeting, your name, a wake word or speech you are unsure about.", "task", "The full task"))
+            .put(JSONObject().put("name", "watch_screen").put("description", "Let yourself see the user's phone screen live for about two minutes (a picture arrives every second). Call it when the user asks you to look at, watch or help with what is on their screen."))
             .put(JSONObject().put("name", "stop_agent").put("description", "Stop the phone agent right now. Call it whenever the user says stop, ruko, band karo, enough, or that the agent should leave the phone alone."))
             .put(decl("search_web", "Search the live web and get a short answer. Use for news, prices, scores, weather, any current fact.", "query", "What to look up"))
             .put(JSONObject().put("name", "read_screen").put("description", "Read what is currently on the phone screen."))
@@ -389,7 +449,7 @@ object Live {
                     }
                 }
             }
-            sc.optJSONObject("inputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis(); if (Agent.running && wantsStop(inText.toString())) Agent.cancel(); if (!devFired && Dev.matches(inText.toString())) { devFired = true; startDev(inText.toString()) } } }
+            sc.optJSONObject("inputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) { inText.append(it); lastActivity = System.currentTimeMillis(); if (Agent.running && wantsStop(inText.toString())) Agent.cancel(); if (!devFired && Dev.matches(inText.toString())) { devFired = true; startDev(inText.toString()) }; if (!watchFired && wantsWatch(inText.toString())) { watchFired = true; val r = shareScreen(120); appCtx?.let { c -> Assistant.get(c).note("👁 $r") } }; if (sharing && wantsStopWatch(inText.toString())) sharing = false } }
             sc.optJSONObject("outputTranscription")?.optString("text")?.let { x0 -> val it = noise(x0); if (it.isNotEmpty()) outText.append(it) }
             if (sc.optBoolean("turnComplete", false)) {
                 val c = appCtx
@@ -406,6 +466,7 @@ object Live {
                 inText.setLength(0)
                 outText.setLength(0)
                 devFired = false
+                watchFired = false
                 if (endAfterTurn) {
                     Thread {
                         Thread.sleep(1800)
@@ -474,6 +535,7 @@ object Live {
                         "saved"
                     }
                 }
+                "watch_screen" -> shareScreen(120)
                 "stop_agent" -> if (Agent.running) { Agent.cancel(); "stopped" } else "no agent is running"
                 "end_live" -> {
                     endAfterTurn = true
